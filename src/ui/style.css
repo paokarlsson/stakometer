@@ -7,6 +7,12 @@
   --accent: #4cc38a;
   --warn: #f0a33a;
   --danger: #ef5a5a;
+  --yellow: #e5c33a;
+  --chart-bg: #12161c;
+  --chart-grid: #232a34;
+  --chart-band: rgb(76 195 138 / 0.18);
+  --chart-target: rgb(76 195 138 / 0.75);
+  --chart-mpa: #7aa7ff;
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 18px;
@@ -207,4 +213,181 @@ pre.log {
   max-height: 22rem;
   overflow: auto;
   white-space: pre;
+}
+
+button.danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.hint.warn {
+  color: var(--warn);
+}
+
+.choices {
+  margin-bottom: 12px;
+}
+
+/* Live view (spec §8.2): chart ~70 %, side panel ~30 %. Readable at 2–3 m. */
+.live {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(260px, 3fr);
+  gap: 16px;
+  height: calc(100vh - 32px);
+}
+
+.live-main {
+  position: relative;
+  min-height: 300px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.countdown {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: min(40vh, 18rem);
+  font-weight: 800;
+  color: var(--text);
+  background: rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
+.banners {
+  position: absolute;
+  top: 36px;
+  left: 56px;
+  right: 16px;
+  pointer-events: none;
+}
+
+.live-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.segment .seg-label {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.segment .seg-left {
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.battery-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.battery {
+  position: relative;
+  width: 56px;
+  height: 140px;
+  border: 3px solid var(--muted);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.battery::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: 18px;
+  width: 14px;
+  height: 3px;
+  background: var(--muted);
+}
+
+.battery-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--accent);
+  transition: height 0.3s linear;
+}
+
+.battery-wrap[data-zone='yellow'] .battery-fill {
+  background: var(--yellow);
+}
+
+.battery-wrap[data-zone='orange'] .battery-fill {
+  background: var(--warn);
+}
+
+.battery-wrap[data-zone='red'] .battery-fill {
+  background: var(--danger);
+}
+
+.battery-text {
+  font-size: 2.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.battery-note {
+  color: var(--muted);
+}
+
+.battery-wrap[data-zone='red'] .battery-note {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.side-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.side-metrics .metric {
+  padding: 10px 12px;
+}
+
+.side-metrics .metric.big {
+  grid-column: 1 / -1;
+}
+
+.side-metrics .metric .value {
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+}
+
+.side-metrics .metric.big .value {
+  font-size: clamp(3rem, 7vw, 5rem);
+}
+
+@media (max-width: 800px) {
+  .live {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .live-main {
+    height: 55vh;
+  }
+}
+
+.fps {
+  position: absolute;
+  right: 16px;
+  bottom: 26px;
+  font: 12px ui-monospace, monospace;
+  color: var(--muted);
 }

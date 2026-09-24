@@ -2,9 +2,14 @@ import { RealClock, SimClock, type SimSpeed } from '../../core/clock';
 import { Pm5Source } from '../../sources/pm5/ble';
 import { UsbPm5Source } from '../../sources/pm5/usb';
 import { Simulator, type SimMode } from '../../sources/simulator';
+import { kOf } from '../../model/signature';
+import { BUILTIN_WORKOUTS } from '../../workout/builtin';
+import { expand, totalDuration } from '../../workout/expand';
+import { usesPctCP } from '../../workout/schema';
 import type { View } from '../app';
 import { debugPanel } from '../debugPanel';
 import { h } from '../dom';
+import { formatDuration } from '../format';
 
 export const startView: View = (root, app) => {
   const status = h('p', { class: 'status' });
@@ -61,11 +66,47 @@ export const startView: View = (root, app) => {
   useSim.addEventListener('click', async () => {
     error.hidden = true;
     const clock = new SimClock(Number(speed.value) as SimSpeed);
-    await app.useSource(new Simulator(clock, { mode: mode.value as SimMode }), clock);
+    await app.useSource(new Simulator(clock, { mode: mode.value as SimMode, target: () => app.target() }), clock);
   });
 
   disconnect.addEventListener('click', () => void app.disconnect());
-  start.addEventListener('click', () => app.navigate('live'));
+  start.addEventListener('click', () => {
+    app.beeper.unlock(); // audio needs a user gesture
+    app.navigate('live');
+  });
+
+  // Workout choice (spec §8.1): built-in workouts and free ride.
+  const signatureText = h('p', { class: 'hint' }, 'Signatur saknas – gör test eller mata in');
+  const noSignatureNote = h('p', { class: 'hint warn', hidden: true }, 'Signatur saknas – passet körs utan målband, W′ och MPA.');
+  let hasSignature = false;
+  const choices = [
+    { id: 'free', label: 'Fri åkning', detail: 'ingen tidslinje', workout: null },
+    ...BUILTIN_WORKOUTS.map((w) => ({ id: w.id, label: w.name, detail: formatDuration(totalDuration(expand(w, null))), workout: w })),
+  ];
+  const updateNote = (): void => {
+    noSignatureNote.hidden = hasSignature || !app.workout || !usesPctCP(app.workout);
+  };
+  const workoutList = h(
+    'div',
+    { class: 'choices' },
+    ...choices.map((c) => {
+      const input = h('input', { type: 'radio', name: 'workout', value: c.id, checked: (app.workout?.id ?? 'free') === c.id });
+      input.addEventListener('change', () => {
+        app.workout = c.workout;
+        updateNote();
+      });
+      return h('label', { class: 'choice' }, input, ` ${c.label} `, h('span', { class: 'hint' }, `· ${c.detail}`));
+    }),
+  );
+  const loadSignature = async (): Promise<void> => {
+    const sig = app.source ? await app.activeSignature() : null;
+    hasSignature = sig !== null;
+    signatureText.textContent = sig
+      ? `PP ${Math.round(sig.pp)} W · CP ${Math.round(sig.cp)} W · W′ ${Math.round(sig.wPrime).toLocaleString('sv-SE')} J · k ${Math.round(kOf(sig))} s` +
+        (sig.id === 'simulator-default' ? ' (simulatorns standardvärden)' : '')
+      : 'Signatur saknas – gör test eller mata in';
+    updateNote();
+  };
 
   const update = (): void => {
     const connected = app.connection === 'connected';
@@ -84,6 +125,7 @@ export const startView: View = (root, app) => {
     useSim.hidden = connected;
     disconnect.hidden = !connected;
     start.disabled = !connected;
+    void loadSignature();
   };
   const off = app.sourceChanged.on(update);
   const debug = debugPanel(app);
@@ -102,14 +144,8 @@ export const startView: View = (root, app) => {
       !usbSupported && !bleSupported && h('p', { class: 'hint' }, 'Varken WebHID eller Web Bluetooth stöds här. Använd Chrome eller Edge.'),
       error,
     ),
-    h('section', { class: 'card' }, h('h2', {}, 'Signatur'), h('p', { class: 'hint' }, 'Signatur saknas – gör test eller mata in')),
-    h(
-      'section',
-      { class: 'card' },
-      h('h2', {}, 'Pass'),
-      h('label', { class: 'choice' }, h('input', { type: 'radio', name: 'workout', value: 'free', checked: true }), ' Fri åkning'),
-      start,
-    ),
+    h('section', { class: 'card' }, h('h2', {}, 'Signatur'), signatureText),
+    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, noSignatureNote, start),
     h('nav', {}, h('button', { class: 'link', onclick: () => app.navigate('history') }, 'Historik')),
     debug.el,
   );

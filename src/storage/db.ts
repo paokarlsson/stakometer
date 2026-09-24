@@ -60,6 +60,12 @@ export class IdbStore implements SessionStore {
     await this.db.put('chunks', chunk);
   }
 
+  /** The active signature for a machine: the latest one (spec §5.1). */
+  async latestSignature(machine: Machine): Promise<FitnessSignature | null> {
+    const all = await this.db.getAllFromIndex('signatures', 'machine', machine);
+    return all.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+  }
+
   getChunks(sessionId: string): Promise<Chunk[]> {
     return this.db.getAll('chunks', IDBKeyRange.bound([sessionId, -Infinity], [sessionId, Infinity]));
   }

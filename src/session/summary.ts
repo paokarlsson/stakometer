@@ -1,10 +1,10 @@
+import { resample } from '../model/resample';
+import type { SignatureParams } from '../model/signature';
+import { wbalSeries } from '../model/wbal';
 import type { Chunk, SessionSummary } from '../storage/types';
 
-/**
- * Summary values computed from raw chunk data (spec §11: no derived series are stored).
- * avgPower is the mean stroke power for now; step 2 switches it to the 1 Hz series (§5.4).
- */
-export function summarize(chunks: readonly Chunk[]): SessionSummary {
+/** Summary values computed from raw chunk data (spec §11: no derived series are stored). */
+export function summarize(chunks: readonly Chunk[], signature: SignatureParams | null = null): SessionSummary {
   const strokes = chunks.flatMap((c) => c.strokes);
   const status = chunks.flatMap((c) => c.status);
 
@@ -16,7 +16,17 @@ export function summarize(chunks: readonly Chunk[]): SessionSummary {
   const dist = status.length > 0 ? status.map((s) => s.distance) : strokes.map((s) => s.distance);
   const distance = dist.length > 0 ? Math.max(0, dist[dist.length - 1]! - dist[0]!) : 0;
 
-  const avgPower = strokes.length > 0 ? strokes.reduce((sum, s) => sum + s.power, 0) / strokes.length : null;
+  const powers = resample(strokes, Math.floor(duration));
+  const work = powers.reduce((sum, p) => sum + p, 0);
+  const avgPower = strokes.length > 0 && powers.length > 0 ? work / powers.length : null;
 
-  return { duration, distance, strokeCount: strokes.length, avgPower };
+  let minWbal: SessionSummary['minWbal'] = null;
+  if (signature && powers.length > 0) {
+    wbalSeries(powers, signature).forEach((w, i) => {
+      const fraction = w / signature.wPrime;
+      if (!minWbal || fraction < minWbal.fraction) minWbal = { fraction, t: i + 1 };
+    });
+  }
+
+  return { duration, distance, strokeCount: strokes.length, avgPower, workKJ: work / 1000, minWbal };
 }

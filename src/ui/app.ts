@@ -1,11 +1,14 @@
 import { RealClock, type Clock } from '../core/clock';
 import { Emitter } from '../core/events';
+import { simulatorSignature, type FitnessSignature } from '../model/signature';
 import type { ConnectionState, DataSource } from '../sources/DataSource';
 import type { Pm5Source } from '../sources/pm5/ble';
 import { UsbPm5Source } from '../sources/pm5/usb';
 import { RawLog } from '../sources/rawlog';
 import type { Simulator } from '../sources/simulator';
 import type { IdbStore } from '../storage/db';
+import type { Workout } from '../workout/schema';
+import { Beeper } from './audio';
 
 export type ViewName = 'start' | 'live' | 'history';
 
@@ -19,6 +22,11 @@ export class App {
   clock: Clock | null = null;
   /** Emits whenever the source or its connection state changes. */
   readonly sourceChanged = new Emitter<ConnectionState>();
+  /** The workout chosen on the start page; null = free ride. */
+  workout: Workout | null = null;
+  /** Current target in W, read by the simulator's followTarget mode. Set by the live view. */
+  target: () => number | null = () => null;
+  readonly beeper = new Beeper();
   /** Debug log of raw PM data (settings §8.5, step 0). Kept across views. */
   readonly rawLog = new RawLog();
   private debug = false;
@@ -49,6 +57,15 @@ export class App {
     if (!device || this.source) return;
     const clock = new RealClock();
     await this.useSource(new UsbPm5Source(device, clock), clock);
+  }
+
+  /**
+   * Active signature for the connected machine: the latest stored one, or the
+   * simulator's placeholder values when running the simulator (spec §5.1).
+   */
+  async activeSignature(): Promise<FitnessSignature | null> {
+    const machine = this.source?.machine() ?? 'skierg';
+    return (await this.store.latestSignature(machine)) ?? (this.source?.kind === 'simulator' ? simulatorSignature(machine) : null);
   }
 
   get debugLogging(): boolean {

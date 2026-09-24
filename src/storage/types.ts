@@ -9,7 +9,10 @@ export interface SessionSummary {
   duration: number; // s
   distance: number; // m
   strokeCount: number;
-  avgPower: number | null; // W; null when there were no strokes
+  avgPower: number | null; // W, from the 1 Hz series; null when there were no strokes
+  workKJ: number; // kJ, from the 1 Hz series
+  /** Lowest W′ balance as a fraction of W′ (may be negative) and when; null without a signature. */
+  minWbal: { fraction: number; t: number } | null;
 }
 
 export interface Session {
@@ -37,6 +40,12 @@ export interface ConnectionEvent {
   state: ConnectionState;
 }
 
+/** Workout runner state change, so paused stretches are marked in the data (spec §6.3). */
+export interface RunnerEvent {
+  t: number;
+  state: string;
+}
+
 export interface Chunk {
   sessionId: string;
   seq: number;
@@ -44,6 +53,7 @@ export interface Chunk {
   status: RecordedStatus[];
   /** Connection changes, so reconnect gaps are visible in the data (spec §9.1, §9.2). */
   connection?: ConnectionEvent[];
+  runner?: RunnerEvent[];
   rawLog?: string[];
 }
 

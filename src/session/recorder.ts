@@ -5,6 +5,7 @@ import type { DataSource, Machine } from '../sources/DataSource';
 import type {
   ConnectionEvent,
   RecordedStatus,
+  RunnerEvent,
   RecordedStroke,
   Session,
   SessionMode,
@@ -27,8 +28,10 @@ export interface StartOptions {
   mode: SessionMode;
   machine: Machine;
   workoutId?: string;
-  timeline?: TimelineSegment[] | null;
+  timeline?: readonly TimelineSegment[] | null;
   signature?: FitnessSignature | null;
+  /** Clock time of session t = 0; defaults to now. May be in the future (countdown). */
+  startTs?: number;
 }
 
 /** Records raw samples from a DataSource into chunks written every CHUNK_INTERVAL_S. */
@@ -40,6 +43,7 @@ export class Recorder {
   private strokes: RecordedStroke[] = [];
   private status: RecordedStatus[] = [];
   private connection: ConnectionEvent[] = [];
+  private runner: RunnerEvent[] = [];
   private unsubscribe: Unsubscribe[] = [];
   private writes: Promise<void> = Promise.resolve();
   private readonly chunkIntervalS: number;
@@ -75,19 +79,20 @@ export class Recorder {
       source: source.kind,
       mode: opts.mode,
       ...(opts.workoutId !== undefined && { workoutId: opts.workoutId }),
-      timeline: opts.timeline ?? null,
+      timeline: opts.timeline ? [...opts.timeline] : null,
       signatureId: signature?.id ?? null,
       signatureSnapshot: signature,
       status: 'aborted',
       summary: null,
     };
     this.session = session;
-    this.startTs = this.clock.now();
-    this.lastFlushTs = this.startTs;
+    this.startTs = opts.startTs ?? this.clock.now();
+    this.lastFlushTs = this.clock.now();
     this.seq = 0;
     this.strokes = [];
     this.status = [];
     this.connection = [];
+    this.runner = [];
     await this.store.putSession(session);
 
     this.unsubscribe = [
@@ -101,22 +106,30 @@ export class Recorder {
     return session;
   }
 
+  /** Records a workout runner state change at the current time. */
+  mark(state: string): void {
+    if (!this.session) return;
+    const now = this.clock.now();
+    this.add(now, () => this.runner.push({ t: now - this.startTs, state }));
+  }
+
   /** Writes buffered samples as a new chunk. Writes are serialised. */
   flush(): Promise<void> {
     const session = this.session;
-    if (!session || (this.strokes.length === 0 && this.status.length === 0 && this.connection.length === 0)) {
-      return this.writes;
-    }
+    const empty = this.strokes.length + this.status.length + this.connection.length + this.runner.length === 0;
+    if (!session || empty) return this.writes;
     const chunk = {
       sessionId: session.id,
       seq: this.seq++,
       strokes: this.strokes,
       status: this.status,
       ...(this.connection.length > 0 && { connection: this.connection }),
+      ...(this.runner.length > 0 && { runner: this.runner }),
     };
     this.strokes = [];
     this.status = [];
     this.connection = [];
+    this.runner = [];
     this.lastFlushTs = this.clock.now();
     this.writes = this.writes.then(() => this.store.putChunk(chunk)).catch((err) => console.error('Chunk write failed:', err));
     return this.writes;
@@ -134,7 +147,7 @@ export class Recorder {
     this.unsubscribe = [];
     await this.flush();
     this.session = null;
-    const done: Session = { ...session, status, summary: summarize(await this.store.getChunks(session.id)) };
+    const done: Session = { ...session, status, summary: summarize(await this.store.getChunks(session.id), session.signatureSnapshot) };
     await this.store.putSession(done);
     return done;
   }
@@ -153,7 +166,7 @@ export async function recoverUnfinished(store: SessionStore): Promise<Session[]>
   const recovered: Session[] = [];
   for (const session of await store.listSessions()) {
     if (session.summary) continue;
-    const done: Session = { ...session, summary: summarize(await store.getChunks(session.id)) };
+    const done: Session = { ...session, summary: summarize(await store.getChunks(session.id), session.signatureSnapshot) };
     await store.putSession(done);
     recovered.push(done);
   }

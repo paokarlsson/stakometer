@@ -1,12 +1,18 @@
 import type { Session } from '../../storage/types';
+import { BUILTIN_WORKOUTS } from '../../workout/builtin';
 import type { View } from '../app';
 import { h } from '../dom';
 import { formatDate, formatDistance, formatDuration, formatPower } from '../format';
 
 const MODE_LABEL: Record<Session['mode'], string> = { free: 'Fri åkning', workout: 'Pass', test: 'Test' };
 
+const workoutLabel = (s: Session): string =>
+  (s.workoutId && BUILTIN_WORKOUTS.find((w) => w.id === s.workoutId)?.name) || MODE_LABEL[s.mode];
+
+const COLUMNS = ['Datum', 'Pass', 'Tid', 'Distans', 'Medeleffekt', 'Lägsta W′', 'Källa', 'Status'];
+
 export const historyView: View = (root, app) => {
-  const body = h('tbody', {}, h('tr', {}, h('td', { colspan: 7 }, 'Laddar…')));
+  const body = h('tbody', {}, h('tr', {}, h('td', { colspan: COLUMNS.length }, 'Laddar…')));
 
   root.append(
     h('h1', {}, 'Historik'),
@@ -16,7 +22,7 @@ export const historyView: View = (root, app) => {
       h(
         'thead',
         {},
-        h('tr', {}, ...['Datum', 'Pass', 'Tid', 'Distans', 'Medeleffekt', 'Källa', 'Status'].map((c) => h('th', {}, c))),
+        h('tr', {}, ...COLUMNS.map((c) => h('th', {}, c))),
       ),
       body,
     ),
@@ -26,16 +32,17 @@ export const historyView: View = (root, app) => {
   void app.store.listSessions().then((sessions) => {
     body.replaceChildren(
       ...(sessions.length === 0
-        ? [h('tr', {}, h('td', { colspan: 7 }, 'Inga pass ännu.'))]
+        ? [h('tr', {}, h('td', { colspan: COLUMNS.length }, 'Inga pass ännu.'))]
         : sessions.map((s) =>
             h(
               'tr',
               {},
               h('td', {}, formatDate(s.startedAt)),
-              h('td', {}, MODE_LABEL[s.mode]),
+              h('td', {}, workoutLabel(s)),
               h('td', { class: 'num' }, s.summary ? formatDuration(s.summary.duration) : '–'),
               h('td', { class: 'num' }, s.summary ? formatDistance(s.summary.distance) : '–'),
               h('td', { class: 'num' }, formatPower(s.summary?.avgPower)),
+              h('td', { class: 'num' }, s.summary?.minWbal ? `${Math.round(Math.max(0, s.summary.minWbal.fraction) * 100)} %` : '–'),
               h('td', {}, s.source === 'pm5' ? 'PM5' : 'Simulator'),
               h('td', {}, s.status === 'completed' ? 'Klart' : 'Avbrutet'),
             ),

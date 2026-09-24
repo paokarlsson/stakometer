@@ -86,7 +86,14 @@ describe('Recorder', () => {
     feed(0, 45);
     const done = await recorder.stop('completed');
     expect(done.status).toBe('completed');
-    expect(done.summary).toEqual({ duration: expect.closeTo(44.9, 6), distance: expect.closeTo(179.6, 6), strokeCount: 23, avgPower: 200 });
+    expect(done.summary).toEqual({
+      duration: expect.closeTo(44.9, 6),
+      distance: expect.closeTo(179.6, 6),
+      strokeCount: 23,
+      avgPower: 200,
+      workKJ: expect.closeTo(8.8, 6),
+      minWbal: null,
+    });
     expect(await store.getSession('s1')).toEqual(done);
     expect(recorder.active).toBeNull();
   });
@@ -95,6 +102,23 @@ describe('Recorder', () => {
     await recorder.start(source, { mode: 'free', machine: 'skierg' });
     await recorder.stop('completed');
     expect(source.strokes.size + source.status.size + source.connection.size).toBe(0);
+  });
+
+  it('can put t = 0 at a given clock time and records runner states', async () => {
+    await recorder.start(source, { mode: 'workout', machine: 'skierg', startTs: clock.now() + 5 });
+    real = 1003;
+    source.strokes.emit({ ts: clock.now(), pmElapsed: 0, power: 100, strokeRate: 30, strokeCount: 1, distance: 0 });
+    real = 1005;
+    recorder.mark('running');
+    real = 1065;
+    recorder.mark('paused');
+    await recorder.stop('aborted');
+    const [chunk] = await store.getChunks('s1');
+    expect(chunk!.strokes[0]!.t).toBe(-2);
+    expect(chunk!.runner).toEqual([
+      { t: 0, state: 'running' },
+      { t: 60, state: 'paused' },
+    ]);
   });
 
   it('records connection changes so gaps are visible', async () => {
@@ -127,7 +151,20 @@ describe('recoverUnfinished', () => {
 
 describe('summarize', () => {
   it('handles an empty session', () => {
-    expect(summarize([])).toEqual({ duration: 0, distance: 0, strokeCount: 0, avgPower: null });
+    expect(summarize([])).toEqual({ duration: 0, distance: 0, strokeCount: 0, avgPower: null, workKJ: 0, minWbal: null });
+  });
+
+  it('averages power over time (1 Hz), not over strokes, and finds the lowest W′', () => {
+    // 60 s at 300 W (one stroke per second), then a single 100 W stroke and 30 s of standing still.
+    const strokes = Array.from({ length: 60 }, (_, i) => ({ t: i + 0.5, pmElapsed: 0, power: 300, strokeRate: 30, strokeCount: i + 1, distance: 0 }));
+    strokes.push({ t: 60.5, pmElapsed: 0, power: 100, strokeRate: 30, strokeCount: 61, distance: 0 });
+    const status = [{ t: 90, pmElapsed: 90, distance: 400 }];
+    const s = summarize([{ sessionId: 'x', seq: 0, strokes, status }], { pp: 500, cp: 200, wPrime: 15000 });
+    // Samples: t=1..60 → 300 W, 61..64 → 100 W (held ≤ 4 s), 65..90 → 0 W.
+    expect(s.avgPower).toBeCloseTo((59 * 300 + 300 + 4 * 100) / 90, 6);
+    expect(s.workKJ).toBeCloseTo((60 * 300 + 4 * 100) / 1000, 6);
+    expect(s.minWbal!.t).toBe(60);
+    expect(s.minWbal!.fraction).toBeCloseTo((15000 - 60 * 100) / 15000, 6);
   });
 
   it('takes distance as the difference over the session', () => {

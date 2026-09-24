@@ -1,10 +1,13 @@
-// Free ride with plain numbers. The canvas live view (spec §8.2) replaces this in step 2.
-import { Recorder } from '../../session/recorder';
-import type { StatusSample, StrokeSample } from '../../sources/DataSource';
+// Live view (spec §8.2): canvas chart (~70 %) and side panel.
+import { wbalZone } from '../../model/wbal';
+import { LiveSession } from '../../session/live';
 import { MANUAL_STEP_W } from '../../sources/simulator';
+import { expand, highestTarget } from '../../workout/expand';
+import { beepsDue } from '../../workout/runner';
 import type { View } from '../app';
 import { h } from '../dom';
-import { formatDistance, formatDuration, formatPower } from '../format';
+import { formatDuration, formatPower } from '../format';
+import { LiveChart, yMaxFor } from '../live/canvas';
 
 export const liveView: View = (root, app) => {
   const source = app.source;
@@ -13,43 +16,175 @@ export const liveView: View = (root, app) => {
     app.navigate('start');
     return () => {};
   }
+  const workout = app.workout;
 
-  const recorder = new Recorder(app.store, clock);
-  let lastStroke: StrokeSample | null = null;
-  let lastStatus: StatusSample | null = null;
-  let firstDistance: number | null = null;
-  let stopping = false;
-  let frame = 0;
-
-  const metric = (label: string) => {
-    const value = h('div', { class: 'value' }, '–');
-    return { el: h('div', { class: 'metric' }, h('div', { class: 'label' }, label), value), value };
-  };
-  const time = metric('Tid');
-  const power = metric('Effekt');
-  const rate = metric('Dragtakt');
-  const distance = metric('Distans');
-  const heartRate = metric('Puls');
-  heartRate.el.hidden = true;
+  // --- DOM ---
+  const canvas = h('canvas', { class: 'chart', role: 'img', 'aria-label': 'Effekt, målband och MPA över tid' });
+  const countdown = h('div', { class: 'countdown', hidden: true });
   const banner = h('p', { class: 'banner', hidden: true }, 'Återansluter till PM5 – passet fortsätter');
-  const sim = app.simulator;
-  const simInfo = h('p', { class: 'hint' });
+  const pausedBanner = h('p', { class: 'banner', hidden: true }, 'Pausat – tidslinjen står still');
 
-  const offs = [
-    source.onStroke((s) => (lastStroke = s)),
-    source.onStatus((s) => {
-      lastStatus = s;
-      firstDistance ??= s.distance;
-    }),
-    source.onConnection((c) => (banner.hidden = c !== 'reconnecting')),
-  ];
+  const segLabel = h('div', { class: 'seg-label' }, workout ? '' : 'Fri åkning');
+  const segLeft = h('div', { class: 'seg-left' }, '–');
+  const segNext = h('div', { class: 'hint' });
+
+  const batteryFill = h('div', { class: 'battery-fill' });
+  const batteryText = h('div', { class: 'battery-text' }, '–');
+  const batteryNote = h('div', { class: 'battery-note' });
+  const battery = h('div', { class: 'battery-wrap' }, h('div', { class: 'battery' }, batteryFill), h('div', {}, batteryText, batteryNote));
+
+  const metric = (label: string, big = false) => {
+    const value = h('div', { class: 'value' }, '–');
+    return { el: h('div', { class: big ? 'metric big' : 'metric' }, h('div', { class: 'label' }, label), value), value };
+  };
+  const power = metric('Effekt (3 drag)', true);
+  const rate = metric('Dragtakt');
+  const heartRate = metric('Puls');
+  const mpaMetric = metric('MPA');
+  const empty = metric('Tid till tomt W′');
+  const elapsed = metric('Tid');
+  heartRate.el.hidden = true;
+  empty.el.hidden = true;
+
+  const pauseBtn = h('button', { class: 'secondary' }, 'Paus');
+  const stopBtn = h('button', { class: 'danger' }, 'Avsluta');
+  const fullscreenBtn = h('button', { class: 'secondary' }, 'Helskärm');
+  const sim = app.simulator;
+  const simInfo = h('p', { class: 'hint small', hidden: !sim });
+  // Frame rate check for the 30 fps criterion (spec §12 step 2); shown in debug mode.
+  const fps = h('div', { class: 'fps', hidden: !app.debugLogging });
+  let fpsFrames = 0;
+  let fpsSince = performance.now();
+
+  root.append(
+    h(
+      'div',
+      { class: 'live' },
+      h('div', { class: 'live-main' }, canvas, countdown, fps, h('div', { class: 'banners' }, banner, pausedBanner)),
+      h(
+        'aside',
+        { class: 'live-side' },
+        h('div', { class: 'segment' }, segLabel, segLeft, segNext),
+        battery,
+        h('div', { class: 'side-metrics' }, power.el, rate.el, heartRate.el, mpaMetric.el, empty.el, elapsed.el),
+        h('div', { class: 'row' }, pauseBtn, stopBtn, fullscreenBtn),
+        simInfo,
+      ),
+    ),
+  );
+
+  // --- Session ---
+  let live: LiveSession | null = null;
+  let chart: LiveChart | null = null;
+  let frame = 0;
+  let stopping = false;
+  let prevRemaining: number | null = null;
+  let prevIndex = -1;
+  let wakeLock: WakeLockSentinel | null = null;
 
   const stop = async (): Promise<void> => {
-    if (stopping) return;
+    if (!live || stopping) return;
     stopping = true;
-    await recorder.stop('completed');
+    await live.stop();
     app.navigate('history');
   };
+
+  const render = (): void => {
+    const l = live;
+    if (!l || !chart) return;
+    l.tick();
+    const runner = l.runner;
+    chart.draw(l);
+    fpsFrames++;
+    const nowMs = performance.now();
+    if (nowMs - fpsSince >= 1000) {
+      fps.textContent = `${Math.round((fpsFrames * 1000) / (nowMs - fpsSince))} fps`;
+      fpsFrames = 0;
+      fpsSince = nowMs;
+    }
+
+    const t = l.sessionTime();
+    countdown.hidden = runner.state !== 'countdown';
+    countdown.textContent = String(Math.ceil(-t));
+    pausedBanner.hidden = runner.state !== 'paused';
+    pauseBtn.textContent = runner.state === 'paused' ? 'Fortsätt' : 'Paus';
+    pauseBtn.disabled = runner.state !== 'running' && runner.state !== 'paused';
+
+    // Segment and beeps (spec §6.3)
+    const cur = runner.current();
+    if (cur) {
+      segLabel.textContent = cur.segment.label;
+      segLeft.textContent = formatDuration(Math.ceil(cur.remaining));
+      segNext.textContent = cur.next
+        ? `Nästa: ${cur.next.label} ${formatDuration(cur.next.end - cur.next.start)}${cur.next.targetW !== null ? ` · ${Math.round(cur.next.targetW)} W` : ''}`
+        : 'Sista segmentet';
+      if (runner.state === 'running' && cur.index === prevIndex && prevRemaining !== null && cur.next && beepsDue(prevRemaining, cur.remaining) > 0) {
+        app.beeper.beep();
+      }
+      prevIndex = cur.index;
+      prevRemaining = cur.remaining;
+    } else if (workout) {
+      segLabel.textContent = workout.name;
+      segLeft.textContent = '–';
+    }
+
+    // W′ battery (spec §5.7)
+    const frac = l.wbalFraction();
+    battery.hidden = frac === null;
+    if (frac !== null) {
+      const zone = wbalZone(frac);
+      batteryFill.style.height = `${Math.min(Math.max(frac, 0), 1) * 100}%`;
+      battery.dataset.zone = zone;
+      batteryText.textContent = `${Math.round(Math.max(frac, 0) * 100)} %`;
+      batteryNote.textContent = frac < 0 ? 'över modellen' : zone === 'red' ? 'Avsluta intervallet' : 'W′';
+    }
+
+    const p = l.currentPowerAvg();
+    power.value.textContent = formatPower(p);
+    const sr = l.strokeRate();
+    rate.value.textContent = sr ? String(Math.round(sr)) : '–';
+    const hr = l.heartRate();
+    heartRate.el.hidden = hr === null;
+    if (hr !== null) heartRate.value.textContent = String(hr);
+    const m = l.mpa();
+    mpaMetric.el.hidden = m === null;
+    if (m !== null) mpaMetric.value.textContent = formatPower(m);
+    const tte = l.timeToEmpty();
+    empty.el.hidden = tte === null;
+    if (tte !== null) empty.value.textContent = formatDuration(tte);
+    const total = runner.duration;
+    const tl = Math.max(0, runner.timelineTime());
+    elapsed.value.textContent = total !== null ? `${formatDuration(tl)} / ${formatDuration(total)}` : formatDuration(Math.max(0, t));
+
+    if (sim) {
+      simInfo.textContent =
+        sim.mode === 'manual'
+          ? `Simulator: ${sim.power} W ${sim.isPulling ? '' : '(står still) '}– ↑/↓ ±${MANUAL_STEP_W} W, mellanslag startar/stoppar`
+          : `Simulator: följer målet (${sim.power} W)`;
+    }
+
+    if (runner.state === 'finished') {
+      void stop();
+      return;
+    }
+    frame = requestAnimationFrame(render);
+  };
+
+  // --- Controls ---
+  pauseBtn.addEventListener('click', () => {
+    if (!live) return;
+    if (live.runner.state === 'paused') live.runner.resume();
+    else live.runner.pause();
+  });
+  stopBtn.addEventListener('click', () => {
+    const r = live?.runner;
+    if (r && r.timeline && !r.isComplete && !confirm('Avsluta passet i förtid? Det sparas som avbrutet.')) return;
+    void stop();
+  });
+  fullscreenBtn.addEventListener('click', () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen().catch(() => {});
+  });
 
   const onKey = (e: KeyboardEvent): void => {
     if (!sim || sim.mode !== 'manual') return;
@@ -59,50 +194,52 @@ export const liveView: View = (root, app) => {
     else return;
     e.preventDefault();
   };
+
+  // Screen Wake Lock during the session (spec §8); re-acquired when the page is visible again.
+  const lockScreen = async (): Promise<void> => {
+    try {
+      wakeLock = (await navigator.wakeLock?.request('screen')) ?? null;
+    } catch {
+      wakeLock = null;
+    }
+  };
   // Best effort on reload/close; the 30 s chunks are the guarantee.
-  const onHide = (): void => void recorder.flush();
+  const onHide = (): void => void live?.recorder.flush();
   const onVisibility = (): void => {
     if (document.visibilityState === 'hidden') onHide();
+    else void lockScreen();
   };
+  const offConnection = source.onConnection((c) => (banner.hidden = c !== 'reconnecting'));
   window.addEventListener('keydown', onKey);
   window.addEventListener('pagehide', onHide);
   document.addEventListener('visibilitychange', onVisibility);
 
-  const render = (): void => {
-    time.value.textContent = formatDuration(recorder.elapsed());
-    power.value.textContent = formatPower(lastStroke?.power);
-    rate.value.textContent = lastStatus?.strokeRate ? String(lastStatus.strokeRate) : '–';
-    distance.value.textContent = lastStatus && firstDistance !== null ? formatDistance(lastStatus.distance - firstDistance) : '–';
-    const hr = lastStatus?.heartRate;
-    heartRate.el.hidden = hr === undefined;
-    if (hr !== undefined) heartRate.value.textContent = String(hr);
-    if (sim) {
-      simInfo.textContent =
-        sim.mode === 'manual'
-          ? `Simulator: ${sim.power} W ${sim.isPulling ? '' : '(står still) '}– ↑/↓ ändrar ±${MANUAL_STEP_W} W, mellanslag startar/stoppar`
-          : `Simulator: ${sim.power} W`;
-    }
+  void (async () => {
+    const signature = await app.activeSignature();
+    const timeline = workout ? expand(workout, signature) : null;
+    live = new LiveSession(source, clock, app.store, {
+      mode: workout ? 'workout' : 'free',
+      ...(workout && { workoutId: workout.id }),
+      timeline,
+      signature,
+    });
+    const session = live;
+    app.target = () => session.runner.target();
+    chart = new LiveChart(canvas, yMaxFor(timeline ? highestTarget(timeline) : null, signature?.cp ?? null));
+    await live.start();
+    void lockScreen();
     frame = requestAnimationFrame(render);
-  };
-
-  root.append(
-    h('h1', {}, 'Fri åkning'),
-    banner,
-    h('div', { class: 'metrics' }, time.el, power.el, rate.el, distance.el, heartRate.el),
-    ...(sim ? [simInfo] : []),
-    h('div', { class: 'row' }, h('button', { class: 'primary big', onclick: () => void stop() }, 'Avsluta')),
-  );
-
-  void recorder.start(source, { mode: 'free', machine: source.machine() ?? 'skierg' }).then(() => {
-    frame = requestAnimationFrame(render);
-  });
+  })();
 
   return () => {
     cancelAnimationFrame(frame);
-    for (const off of offs) off();
+    chart?.dispose();
+    offConnection();
+    app.target = () => null;
     window.removeEventListener('keydown', onKey);
     window.removeEventListener('pagehide', onHide);
     document.removeEventListener('visibilitychange', onVisibility);
-    if (recorder.active) void recorder.stop('aborted');
+    void wakeLock?.release().catch(() => {});
+    if (live && !stopping) void live.stop();
   };
 };

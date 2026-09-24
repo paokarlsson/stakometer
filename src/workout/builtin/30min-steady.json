@@ -1,0 +1,5 @@
+{
+  "id": "30min-steady",
+  "name": "30 min jämnt",
+  "segments": [{ "kind": "steady", "duration": 1800, "target": { "pctCP": 75 } }]
+}
