@@ -3,6 +3,7 @@ import { Emitter } from '../core/events';
 import type { ConnectionState, DataSource } from '../sources/DataSource';
 import type { Pm5Source } from '../sources/pm5/ble';
 import { UsbPm5Source } from '../sources/pm5/usb';
+import { RawLog } from '../sources/rawlog';
 import type { Simulator } from '../sources/simulator';
 import type { IdbStore } from '../storage/db';
 
@@ -18,6 +19,10 @@ export class App {
   clock: Clock | null = null;
   /** Emits whenever the source or its connection state changes. */
   readonly sourceChanged = new Emitter<ConnectionState>();
+  /** Debug log of raw PM data (settings §8.5, step 0). Kept across views. */
+  readonly rawLog = new RawLog();
+  private debug = false;
+  private offRawLog: (() => void) | null = null;
   private offConnection: (() => void) | null = null;
   private connecting = false;
 
@@ -46,6 +51,16 @@ export class App {
     await this.useSource(new UsbPm5Source(device, clock), clock);
   }
 
+  get debugLogging(): boolean {
+    return this.debug;
+  }
+
+  setDebugLogging(on: boolean): void {
+    this.debug = on;
+    this.offRawLog?.();
+    this.offRawLog = on && this.source ? this.rawLog.attach(this.source) : null;
+  }
+
   get connection(): ConnectionState {
     return (this.source as { state?: ConnectionState } | null)?.state ?? 'disconnected';
   }
@@ -61,6 +76,7 @@ export class App {
     this.offConnection = source.onConnection((state) => this.sourceChanged.emit(state));
     this.source = source;
     this.clock = clock;
+    if (this.debug) this.offRawLog = this.rawLog.attach(source);
     this.sourceChanged.emit(this.connection);
   }
 
@@ -70,6 +86,8 @@ export class App {
     this.clock = null;
     this.offConnection?.();
     this.offConnection = null;
+    this.offRawLog?.();
+    this.offRawLog = null;
     await source?.disconnect();
     this.sourceChanged.emit('disconnected');
   }

@@ -192,3 +192,19 @@ select {
     overflow-x: auto;
   }
 }
+
+nav {
+  margin-bottom: 16px;
+}
+
+pre.log {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre;
+}

@@ -3,7 +3,7 @@
 // characteristics are [VERIFY] and optional: only stroke data is required.
 import type { Clock } from '../../core/clock';
 import { Emitter } from '../../core/events';
-import { BaseSource, type Machine } from '../DataSource';
+import { BaseSource, type Machine, type RawNotification } from '../DataSource';
 import { CHAR, MACHINE_TYPE_SKIERG, MULTIPLEX_ID_ADDITIONAL_STROKE, SAMPLE_RATE, SERVICE } from './uuids';
 import {
   parseAdditionalStatus,
@@ -19,12 +19,6 @@ import {
 } from './parse';
 
 const RECONNECT_DELAYS_S = [1, 2, 4, 8, 16];
-
-export interface RawNotification {
-  ts: number;
-  char: string;
-  hex: string;
-}
 
 export class Pm5Source extends BaseSource {
   readonly kind = 'pm5' as const;

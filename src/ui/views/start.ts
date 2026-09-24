@@ -3,6 +3,7 @@ import { Pm5Source } from '../../sources/pm5/ble';
 import { UsbPm5Source } from '../../sources/pm5/usb';
 import { Simulator, type SimMode } from '../../sources/simulator';
 import type { View } from '../app';
+import { debugPanel } from '../debugPanel';
 import { h } from '../dom';
 
 export const startView: View = (root, app) => {
@@ -85,6 +86,7 @@ export const startView: View = (root, app) => {
     start.disabled = !connected;
   };
   const off = app.sourceChanged.on(update);
+  const debug = debugPanel(app);
 
   root.append(
     h('h1', {}, 'SkiErg Training'),
@@ -109,7 +111,11 @@ export const startView: View = (root, app) => {
       start,
     ),
     h('nav', {}, h('button', { class: 'link', onclick: () => app.navigate('history') }, 'Historik')),
+    debug.el,
   );
   update();
-  return off;
+  return () => {
+    off();
+    debug.cleanup();
+  };
 };

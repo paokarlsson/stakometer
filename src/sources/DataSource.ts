@@ -23,6 +23,14 @@ export interface StatusSample {
 
 export type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';
 
+/** One raw message from the PM5 as hex, for the debug log and fixtures. */
+export interface RawNotification {
+  ts: number;
+  /** BLE characteristic (e.g. '0036') or HID input report (e.g. 'hid2'). */
+  char: string;
+  hex: string;
+}
+
 export interface DataSource {
   readonly kind: 'pm5' | 'simulator';
   connect(): Promise<void>;

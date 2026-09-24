@@ -42,7 +42,7 @@ export interface Chunk {
   seq: number;
   strokes: RecordedStroke[];
   status: RecordedStatus[];
-  /** Connection changes, so reconnect gaps are visible in the data (spec §9.1). */
+  /** Connection changes, so reconnect gaps are visible in the data (spec §9.1, §9.2). */
   connection?: ConnectionEvent[];
   rawLog?: string[];
 }

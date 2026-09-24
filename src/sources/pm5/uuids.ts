@@ -1,4 +1,4 @@
-// PM5 Bluetooth UUIDs (spec §9.2). [VERIFY] Not yet confirmed against a real PM5.
+// PM5 Bluetooth UUIDs (spec §9.2). Status per UUID is in the spec table.
 
 const uuid = (short: string): string => `ce06${short.toLowerCase()}-43e5-11e4-916c-0800200c9a66`;
 

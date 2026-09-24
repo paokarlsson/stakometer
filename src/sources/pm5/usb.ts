@@ -7,8 +7,7 @@
 // and its power is taken from the next response, when the PM has updated it.
 import type { Clock } from '../../core/clock';
 import { Emitter } from '../../core/events';
-import { BaseSource, type Machine, type StatusSample, type StrokeSample } from '../DataSource';
-import type { RawNotification } from './ble';
+import { BaseSource, type Machine, type RawNotification, type StatusSample, type StrokeSample } from '../DataSource';
 import { buildFrame, CMD, FRAME_END, FRAME_START, parseFrame, PM, StrokeState, uintLE, type CsafeResponse } from './csafe';
 
 export const CONCEPT2_VENDOR_ID = 0x17a4;
@@ -96,7 +95,7 @@ export class UsbDecoder {
 export class UsbPm5Source extends BaseSource {
   readonly kind = 'pm5' as const;
   readonly transport = 'usb' as const;
-  /** Every frame as hex, for debug logging and fixtures. */
+  /** Every response frame as hex, for debug logging and fixtures. */
   readonly raw = new Emitter<RawNotification>();
 
   private device: HIDDevice | null;
@@ -162,7 +161,7 @@ export class UsbPm5Source extends BaseSource {
   }
 
   machine(): Machine | null {
-    return null; // not available over CSAFE; the settings choice applies (spec §9.3)
+    return null; // not available over CSAFE; the settings choice applies (spec §9.1)
   }
 
   private async open(device: HIDDevice): Promise<void> {
@@ -217,7 +216,6 @@ export class UsbPm5Source extends BaseSource {
       }, timeoutMs);
       this.pending = { resolve, reject, timer };
     });
-    if (this.raw.size > 0) this.raw.emit({ ts: this.clock.now(), char: `→hid${reportId}`, hex: hex(frame) });
     device.sendReport(reportId, data).catch((err: unknown) => {
       this.rejectPending(new Error(`sendReport #${reportId} misslyckades: ${err instanceof Error ? err.message : err}`));
     });
@@ -232,7 +230,7 @@ export class UsbPm5Source extends BaseSource {
     if (this.raw.size > 0) {
       let end = bytes.length;
       while (end > 0 && bytes[end - 1] === 0) end--;
-      this.raw.emit({ ts: this.clock.now(), char: `←hid${e.reportId}`, hex: hex(bytes.subarray(0, stop >= 0 ? stop + 1 : end)) });
+      this.raw.emit({ ts: this.clock.now(), char: `hid${e.reportId}`, hex: hex(bytes.subarray(0, stop >= 0 ? stop + 1 : end)) });
     }
     const pending = this.pending;
     if (!pending || start < 0) return;

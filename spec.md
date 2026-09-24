@@ -9,7 +9,7 @@
 
 - **Ordning:** Bygg i den ordning som anges i §12 (steg 0–3). Ett steg i taget. Varje steg ska uppfylla sina acceptanskriterier innan nästa påbörjas.
 - **Beslutsnivåer:** Punkter märkta **[LÅST]** får inte ändras. Punkter märkta **[FÖRSLAG]** får ändras om du motiverar varför i commit- eller PR-beskrivningen.
-- **[VERIFIERA]:** Allt som rör PM5-protokollet är skrivet ur minnet och inte bekräftat. Kontrollera mot Concept2:s officiella spec och mot rådata från en riktig PM5 innan du bygger vidare på det.
+- **[VERIFIERA]:** PM5-protokollet skrevs ursprungligen ur minnet. Det som är bekräftat mot en riktig PM5 är märkt så i §9. Det som fortfarande är märkt [VERIFIERA] ska kontrolleras mot rådata innan du bygger vidare på det. `demo/` (committas inte) innehåller kod som fungerar mot en riktig PM5 och är facit vid tveksamheter.
 - **Ren modellkod:** Funktionerna i §5 och §6.2 ska vara rena funktioner utan beroenden till UI, BLE eller lagring, och ha enhetstester.
 - **Språk:** Kod, identifierare och kommentarer på engelska. UI-texter på svenska.
 - **Enheter internt:** watt (W), joule (J), sekunder (s), meter (m). Tid lagras som sekunder (flyttal) relativt passets start.
@@ -22,7 +22,7 @@
 
 En webbapp för Concept2 SkiErg med PM5-monitor som:
 
-1. läser data i realtid via Web Bluetooth,
+1. läser data i realtid från PM5 via USB (WebHID), eller via Web Bluetooth,
 2. visar en rullande vy där målzonen syns 60 s framåt i tiden,
 3. modellerar användarens kapacitet med en **Fitness Signature** (PP, CP, W′),
 4. visar W′-balans (ett "batteri") och MPA (maximal tillgänglig effekt just nu) live.
@@ -35,7 +35,7 @@ En webbapp för Concept2 SkiErg med PM5-monitor som:
 
 ### 2.1 I scope (v1)
 
-- Anslutning till PM5 via Web Bluetooth, plus en simulator med samma gränssnitt
+- Anslutning till PM5 via USB (WebHID + CSAFE) som standard och via Web Bluetooth som alternativ, plus en simulator med samma gränssnitt
 - Lokal lagring (IndexedDB) med rådata per drag och autosparning under passet
 - Rullande livevy med målband, effekt, MPA-linje och W′-batteri
 - Passformat i JSON, med tre inbyggda pass och läget "Fri åkning"
@@ -62,7 +62,7 @@ En webbapp för Concept2 SkiErg med PM5-monitor som:
 - Passgenerator och maskininlärning
 - ATL/CTL per energisystem
 - Stöd för RowErg och BikeErg (datamodellen ska dock klara flera maskintyper, se §5.1)
-- Styrning av PM5 via USB eller CSAFE-kommandon
+- Styrning av PM5 med CSAFE-kommandon, till exempel att programmera pass. Att *läsa* data via USB ingår i v1 (§9.1).
 - Backend, konton och synk
 - Stöd för iOS
 
@@ -72,7 +72,8 @@ En webbapp för Concept2 SkiErg med PM5-monitor som:
 
 | Område | Beslut | Status |
 |---|---|---|
-| Plattform | Webbapp för Chrome och Edge (desktop och Android). Web Bluetooth kräver HTTPS eller `localhost` och ett användarklick. iOS stöds inte. | [LÅST] |
+| Plattform | Webbapp för Chrome och Edge (desktop och Android). WebHID och Web Bluetooth kräver HTTPS eller `localhost`, och första anslutningen kräver ett användarklick. iOS stöds inte. | [LÅST] |
+| PM5-anslutning | USB (WebHID + CSAFE) är standard. En PM5 som användaren redan godkänt ansluts automatiskt när den sitter i, både vid sidladdning och när sladden kopplas in. Web Bluetooth används bara när användaren väljer det. | [LÅST] |
 | Fysiologisk modell | Fitness Signature (PP, CP, W′) med Mortons 3-parametermodell (§5.2). | [LÅST] |
 | PP-definition | PP är modellens värde när t går mot 0: `PP = CP + W′/k`. | [LÅST] |
 | Passkontroll | Appen styr passet genom målen på skärmen. PM5 körs i läget "Just Ski". Appen skickar inga kommandon för att programmera PM5. | [LÅST] |
@@ -93,7 +94,9 @@ En webbapp för Concept2 SkiErg med PM5-monitor som:
 src/
   core/        clock.ts, events.ts            (klocka, typad event-buss)
   sources/     DataSource.ts, simulator.ts
-               pm5/  uuids.ts, parse.ts, ble.ts
+               rawlog.ts                      (felsökningslogg, §12 steg 0)
+               pm5/  uuids.ts, parse.ts, ble.ts (Bluetooth)
+                     csafe.ts, usb.ts           (USB)
   model/       signature.ts, morton3p.ts, fit3p.ts, resample.ts, wbal.ts, mpa.ts
   workout/     schema.ts, expand.ts, runner.ts, builtin/*.json
   session/     recorder.ts, summary.ts
@@ -366,7 +369,8 @@ Under inställningar kan användaren mata in PP, CP och W′ direkt, med valider
 
 ### 8.1 Start
 
-- Knappar för "Anslut PM5" och "Använd simulator", plus anslutningsstatus.
+- Knappar för "Anslut PM5 via USB", "Anslut via Bluetooth" och "Använd simulator", plus anslutningsstatus.
+- Panelen "Felsökning": logga rådata, visa rå hex bredvid tolkade drag och ladda ned loggen som JSON.
 - Aktiv signatur, eller texten "Signatur saknas – gör test eller mata in".
 - Val av pass (inbyggda pass, testpass, fri åkning) och startknapp.
 
@@ -407,51 +411,69 @@ En lista med datum, pass, tid, distans, medeleffekt och lägsta W′-procent. Et
 - Standardtolerans för målband och antal drag i effektmedlet
 - Gränser för W′-zonerna, samt Skiba-konstanterna under "Avancerat"
 - Maskintyp: automatisk eller manuellt val (standard SkiErg)
-- Debugläge som loggar rå BLE-data
+- Debugläge som loggar rå PM5-data (finns tills vidare som panelen "Felsökning" på startsidan)
 - Export och import av hela databasen som JSON
 
 ---
 
-## 9. PM5 via Web Bluetooth [VERIFIERA]
+## 9. PM5
 
-**Källor:** Concept2:s officiella dokument för PM5:s Bluetooth-gränssnitt ("PM5 Bluetooth Smart Communications Interface Definition"). Använd referensimplementationerna `ergarcade/pm5-base` och ErgometerJS för att jämföra tolkningen av data.
+**Källor:** `demo/` (fungerar mot en riktig PM5), Concept2:s "PM CSAFE Communication Definition" och "PM5 Bluetooth Smart Communications Interface Definition", samt ErgometerJS i `reference/`.
 
-### 9.1 Anslutning
+**Märkning:** **[BEKRÄFTAT]** = fungerar mot en riktig PM5, i appen eller i `demo/`. **[VERIFIERA]** = ej bekräftat.
 
-- Anropa `navigator.bluetooth.requestDevice` med filtret `namePrefix: 'PM5'` och de tjänster som behövs i `optionalServices`. Anropet måste ske från ett användarklick.
-- Prenumerera på notifications, inte vanlig read. Över BLE levereras data via notifications.
-- Skriv önskat samplingsintervall till karaktäristik `0034` (förväntat värde 3 = 100 ms).
-- **Återanslutning:** Vid `gattserverdisconnected` görs upp till 5 försök med `device.gatt.connect()` och ökande väntetid. Passet fortsätter under tiden, och luckan markeras i datan.
-- **Puls:** Om karaktäristik `0032` ger en giltig puls (skild från 255) visas och sparas den. Separat pulsband kommer i v2.
+### 9.1 USB (WebHID + CSAFE) – standard [BEKRÄFTAT]
 
-### 9.2 Förväntade UUID:er (ej verifierade)
+Bekräftat 2026-09-24: appen ansluter via USB och effekten per drag stämmer med PM5-displayen.
 
-Bas: `ce06XXXX-43e5-11e4-916c-0800200c9a66`
+- **Enhet:** `navigator.hid.requestDevice` med `vendorId: 0x17A4`. Därefter hittas enheten med `navigator.hid.getDevices()` utan klick.
+- **HID-rapporter:** PM:en svarar i samma rapport som frågan skickades i, och klipper svar som inte får plats. Prova med `GETSTATUS` (0x80) i ordningen #2 (120 B), #4 (62 B), #1 (20 B) och behåll den första som svarar. Fyll ut varje rapport till den storlek HID-deskriptorn anger om den är större. Windows kräver det och anger 500 B för alla tre.
+- **Ram:** `F1 <innehåll> <XOR-checksumma> F2`. Bytes F0–F3 i innehåll och checksumma byte-stuffas som `F3 00..03`. Svaret kommer i en rapport. Klipp vid första `F2`, eftersom gammalt skräp kan följa efter.
+- **Svar:** statusbyte, sedan `[kommando, längd, data…]*`. PM-kommandon ligger i wrappern `0x1A` och tolkas för sig, eftersom kommandokoderna överlappar med standardkommandona.
+- **Pollning** (ingen notifiering finns över USB):
+  - Var 50:e ms: `GETPOWER` (0xB4) + PM `STROKESTATE` (0xBF).
+  - Var 250:e ms: `GETPACE` (0xA6, s/km), `GETCADENCE` (0xA7), `GETPOWER`, `GETHRCUR` (0xB0) + PM `WORKTIME` (0xA0, 0,01 s), `WORKDISTANCE` (0xA3, 0,1 m), `STROKESTATE`, `DRAGFACTOR` (0xC1).
+  - Standardsvaren är little-endian följt av en enhetsbyte.
+- **Drag:** ett drag räknas när dragfasen lämnar "driving" (2). Effekten tas från `GETPOWER` i *nästa* svar, när PM:en har hunnit uppdatera den.
+- **Återanslutning:** efter 10 fel i rad, eller när sladden dras ur, försöker appen igen var 2:a sekund tills PM:en svarar eller användaren kopplar från. Passet fortsätter under tiden, och luckan markeras i datan.
+- **Maskintyp:** finns inte över CSAFE. Det manuella valet i inställningarna gäller (standard SkiErg).
 
-| XXXX | Namn | Används till i v1 |
-|---|---|---|
-| 0010 | Device information service | modell, firmware |
-| 0020 | Control service | används inte |
-| 0030 | Rowing service (primär) | behållare för nedanstående |
-| 0031 | General status | elapsed time, distans, workout state, drag factor |
-| 0032 | Additional status | dragtakt, puls, pace, maskintyp |
-| 0033 | Additional status 2 | medeleffekt (kontrollvärde) |
-| 0034 | Sample rate (write) | 0 = 1 s, 1 = 500 ms, 2 = 250 ms, 3 = 100 ms |
-| 0035 | Stroke data | spara tolkade fält i `raw`, används inte |
-| 0036 | Additional stroke data | **effekt per drag (W)**, antal drag |
-| 003D | Force curve | används inte (v2) |
+### 9.2 Web Bluetooth – alternativ
 
-### 9.3 Förväntade byte-layouter (ej verifierade)
+- **Anslutning [BEKRÄFTAT i demo/]:** `navigator.bluetooth.requestDevice` med filtret `services: [ce060000-…]` (discovery-tjänsten), inte namnet, eftersom namnet kan saknas i annonsen på Windows. Anropet måste ske från ett användarklick. Som reserv finns "Visa alla enheter" (`acceptAllDevices`).
+- **Maskintyp [BEKRÄFTAT i demo/]:** läses från `0016` i device info-tjänsten (1 byte). SkiErg = 128. Andra värden ger det manuella valet.
+- **Dragdata [BEKRÄFTAT i demo/]:** notifications på `0036`. Om den inte går att prenumerera på används multiplexade `0080`, där byte 0 är id (0x36) och resten har samma layout som `0036`.
+- **Övrigt [VERIFIERA]:** samplingsintervall till `0034` (3 = 100 ms) och notifications på `0031`, `0032`, `0033` och `0035`. Dessa är valfria. Anslutningen lyckas även om de misslyckas.
+- **Återanslutning:** vid `gattserverdisconnected` görs upp till 5 försök med ökande väntetid. Passet fortsätter under tiden, och luckan markeras i datan.
+- **Puls [VERIFIERA]:** från `0032` om värdet är giltigt (skilt från 255). Separat pulsband kommer i v2.
+
+UUID-bas: `ce06XXXX-43e5-11e4-916c-0800200c9a66`
+
+| XXXX | Namn | Används till i v1 | Status |
+|---|---|---|---|
+| 0000 | Discovery service | filter i `requestDevice` | BEKRÄFTAT (demo) |
+| 0010 | Device information service | behållare för 0016 | BEKRÄFTAT (demo) |
+| 0016 | Erg machine type | maskintyp, SkiErg = 128 | BEKRÄFTAT (demo) |
+| 0020 | Control service | används inte | – |
+| 0030 | Rowing service (primär) | behållare för nedanstående | BEKRÄFTAT (demo) |
+| 0031 | General status | elapsed time, distans, workout state, drag factor | VERIFIERA |
+| 0032 | Additional status | dragtakt, puls, pace | VERIFIERA |
+| 0033 | Additional status 2 | medeleffekt (kontrollvärde) | VERIFIERA |
+| 0034 | Sample rate (write) | 0 = 1 s, 1 = 500 ms, 2 = 250 ms, 3 = 100 ms | VERIFIERA |
+| 0035 | Stroke data | tolkade fält sparas i `raw` | VERIFIERA |
+| 0036 | Additional stroke data | **effekt per drag (W)**, antal drag | BEKRÄFTAT (demo), byte 0–8 |
+| 003D | Force curve | används inte (v2) | – |
+| 0080 | Multiplexed data | reserv för 0036 | BEKRÄFTAT (demo) |
+
+### 9.3 Byte-layouter för Bluetooth
 
 Alla värden är little-endian. Tid anges i enheter om 0,01 s och distans i enheter om 0,1 m.
 
-- **0031:** [0–2] elapsed, [3–5] distans, [6] workout type, [7] interval type, [8] workout state, [9] rowing state, [10] stroke state, [11–13] total work distance, [14–16] workout duration, [17] duration type, [18] drag factor
-- **0032:** [0–2] elapsed, [3–4] speed (0,001 m/s), [5] dragtakt, [6] puls (255 = ogiltig), [7–8] current pace (0,01 s/500 m), [9–10] average pace, [11–12] rest distance, [13–15] rest time, [16] erg machine type
-- **0036:** [0–2] elapsed, [3–4] effekt per drag (W), [5–6] stroke calories (cal/h), [7–8] antal drag, [9–11] projected work time, [12–14] projected work distance
+- **0036 [BEKRÄFTAT i demo/, byte 0–8]:** [0–2] elapsed, [3–4] effekt per drag (W), [5–6] stroke calories (cal/h), [7–8] antal drag. [VERIFIERA]: [9–11] projected work time, [12–14] projected work distance. De saknas i den multiplexade varianten.
+- **0031 [VERIFIERA]:** [0–2] elapsed, [3–5] distans, [6] workout type, [7] interval type, [8] workout state, [9] rowing state, [10] stroke state, [11–13] total work distance, [14–16] workout duration, [17] duration type, [18] drag factor
+- **0032 [VERIFIERA]:** [0–2] elapsed, [3–4] speed (0,001 m/s), [5] dragtakt, [6] puls (255 = ogiltig), [7–8] current pace (0,01 s/500 m), [9–10] average pace, [11–12] rest distance, [13–15] rest time. Maskintypen läses från `0016`, inte från här.
 
-**Maskintyp:** Enum-värdet för SkiErg i `0032` är okänt. Om det inte går att bekräfta används det manuella valet i inställningarna.
-
-**Tolkning:** Parse-funktionerna ska vara rena funktioner (`DataView → objekt`) med enhetstester mot hex-fixtures från en riktig PM5.
+**Tolkning:** Parse-funktionerna (Bluetooth: `DataView → objekt`, USB: CSAFE-ram → svar) är rena funktioner med enhetstester. Hex-fixtures från en riktig PM5 läggs i `tests/fixtures/` och spelas upp av `tests/fixtures.test.ts`.
 
 ---
 
@@ -496,18 +518,20 @@ IndexedDB-databasen heter `skierg-training`, version 1.
 
 ### Steg 0 – Verifiera protokollet
 
-Kräver en riktig PM5. Agenten bygger sidan, användaren kör den mot sin SkiErg och skickar tillbaka loggen.
+Kräver en riktig PM5. Agenten bygger loggningen, användaren kör den mot sin SkiErg och lämnar tillbaka loggen.
 
-- **Bygg:** En minimal sida som ansluter, prenumererar på `0031`, `0032` och `0036`, och visar rå hex bredvid de tolkade värdena. Loggen ska gå att ladda ned som JSON.
+- **Bygg:** Panelen "Felsökning" på startsidan (§8.1). Den loggar rå hex från PM5 (USB eller Bluetooth) bredvid de tolkade dragen, och loggen kan laddas ned som JSON.
 - **Klart när:**
-  - effekten per drag stämmer med PM5-displayen (±2 W) för 20 drag i följd,
+  - effekten per drag stämmer med PM5-displayen (±2 W) för 20 drag i följd – **klart för USB** (2026-09-24),
   - dragtakten stämmer,
-  - hex-fixtures ligger sparade i `tests/fixtures/`,
-  - tabellerna i §9.2 och §9.3 är uppdaterade med verifierade värden och märkningen [VERIFIERA] är borttagen där det gäller.
+  - hex-fixtures ligger sparade i `tests/fixtures/` och `tests/fixtures.test.ts` är grönt,
+  - §9 är uppdaterad med verifierade värden och märkningen [VERIFIERA] är borttagen där det gäller – **klart för USB och det som `demo/` bekräftar för Bluetooth**.
 
 Om steg 0 inte kan göras direkt får agenten fortsätta med steg 1 mot simulatorn. PM5-tolkningen förblir då märkt som overifierad.
 
 ### Steg 1 – Grund
+
+**Status: klart** (2026-09-24). Simulatorläget `fatigue` är flyttat till steg 3, som är det enda steget som använder det.
 
 - **Bygg:** Projektuppsättning, `Clock`, event-buss, `DataSource`, simulatorn (§10), PM5-källan (§9), recordern med autosparning, IndexedDB (§11) och en enkel historiklista.
 - **Klart när:**
@@ -541,6 +565,7 @@ Om steg 0 inte kan göras direkt får agenten fortsätta med steg 1 mot simulato
 - **Skiba-konstanterna** kommer från cykling och kan skilja sig för stakning. De är konfigurerbara, och kalibrering sker i v2.
 - **Toleransbandet** på ±5 % är en gissning. Justera efter riktig data.
 - **Effekten per drag** på SkiErg är ryckig. Medel över 3 drag är ett startvärde.
-- **Maskintypens enum-värde** för SkiErg är okänt (§9.3).
-- **Web Bluetooth** fungerar inte i iOS, kräver HTTPS eller `localhost` och kräver ett användarklick för att ansluta.
+- **Maskintyp:** över Bluetooth läses den från `0016` (SkiErg = 128). Över USB finns den inte, så där gäller det manuella valet (§9).
+- **WebHID och Web Bluetooth** fungerar inte i iOS, kräver HTTPS eller `localhost` och kräver ett användarklick första gången.
+- **USB-pollning:** status kommer var 250:e ms i stället för var 100:e ms som över Bluetooth. Det räcker för 1 Hz-resamplingen (§5.4).
 - **Negativ W′-balans** loggas men hanteras inte i v1. Breakthrough-logiken kommer i v2.
