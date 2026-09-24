@@ -28,6 +28,13 @@ export function validateSignature(s: SignatureParams): string | null {
   return null;
 }
 
+/** Starting signature for a PM5 until the user has one of their own (spec §5.1). k = 40 s. */
+export const DEFAULT_PM5_SIGNATURE: SignatureParams = { pp: 430, cp: 180, wPrime: 10_000 };
+
+export function defaultPm5Signature(machine: Machine = 'skierg'): FitnessSignature {
+  return { id: 'pm5-default', machine, ...DEFAULT_PM5_SIGNATURE, createdAt: new Date(0).toISOString(), source: 'manual' };
+}
+
 /** Placeholder signature for the simulator (spec §5.1), not real values. k = 50 s. */
 export const SIMULATOR_SIGNATURE: SignatureParams = { pp: 500, cp: 200, wPrime: 15_000 };
 

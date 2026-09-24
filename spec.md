@@ -192,6 +192,7 @@ interface FitnessSignature {
 - **Validering:** `pp > cp > 0` och `wPrime > 0`.
 - **Lagring:** Signaturer sparas append-only per maskintyp. Den aktiva signaturen är den senaste för aktuell maskin.
 - **Simulatorns standardvärden** (inga riktiga värden): PP 500 W, CP 200 W, W′ 15 000 J, vilket ger k = 50 s.
+- **Standardsignatur för PM5** (användarens beslut 2026-09-24): PP 430 W, CP 180 W, W′ 10 000 J, vilket ger k = 40 s. Den används när ingen egen signatur finns sparad för maskinen och sparas inte i databasen. Simulatorn behåller sina egna standardvärden.
 
 ### 5.2 Power-duration: Mortons 3-parametermodell
 
@@ -371,7 +372,7 @@ Under inställningar kan användaren mata in PP, CP och W′ direkt, med valider
 
 - Knappar för "Anslut PM5 via USB", "Anslut via Bluetooth" och "Använd simulator", plus anslutningsstatus.
 - Panelen "Felsökning": logga rådata, visa rå hex bredvid tolkade drag och ladda ned loggen som JSON.
-- Aktiv signatur, eller texten "Signatur saknas – gör test eller mata in".
+- Aktiv signatur. Standardvärden (§5.1) visas som sådana, med en uppmaning att göra test eller mata in egna.
 - Val av pass (inbyggda pass, testpass, fri åkning) och startknapp.
 
 ### 8.2 Livevy

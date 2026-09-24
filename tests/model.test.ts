@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { mpa } from '../src/model/mpa';
 import { powerAt, timeToExhaustion } from '../src/model/morton3p';
 import { resample, Resampler } from '../src/model/resample';
-import { kOf, SIMULATOR_SIGNATURE, validateSignature } from '../src/model/signature';
+import { DEFAULT_PM5_SIGNATURE, kOf, SIMULATOR_SIGNATURE, validateSignature } from '../src/model/signature';
 import { tau, timeToEmpty, wbalSeries, wbalStep, wbalZone } from '../src/model/wbal';
 
 describe('signature', () => {
   it('derives k = W′/(PP − CP)', () => {
     expect(kOf(SIMULATOR_SIGNATURE)).toBe(50);
+    expect(kOf(DEFAULT_PM5_SIGNATURE)).toBe(40);
+  });
+
+  it('has valid default signatures', () => {
+    expect(validateSignature(SIMULATOR_SIGNATURE)).toBeNull();
+    expect(validateSignature(DEFAULT_PM5_SIGNATURE)).toBeNull();
   });
 
   it('validates pp > cp > 0 and wPrime > 0', () => {

@@ -5,7 +5,6 @@ import { Simulator, type SimMode } from '../../sources/simulator';
 import { kOf } from '../../model/signature';
 import { BUILTIN_WORKOUTS } from '../../workout/builtin';
 import { expand, totalDuration } from '../../workout/expand';
-import { usesPctCP } from '../../workout/schema';
 import type { View } from '../app';
 import { debugPanel } from '../debugPanel';
 import { h } from '../dom';
@@ -76,36 +75,30 @@ export const startView: View = (root, app) => {
   });
 
   // Workout choice (spec §8.1): built-in workouts and free ride.
-  const signatureText = h('p', { class: 'hint' }, 'Signatur saknas – gör test eller mata in');
-  const noSignatureNote = h('p', { class: 'hint warn', hidden: true }, 'Signatur saknas – passet körs utan målband, W′ och MPA.');
-  let hasSignature = false;
+  const signatureText = h('p', { class: 'hint' }, 'Anslut för att se aktiv signatur');
   const choices = [
     { id: 'free', label: 'Fri åkning', detail: 'ingen tidslinje', workout: null },
     ...BUILTIN_WORKOUTS.map((w) => ({ id: w.id, label: w.name, detail: formatDuration(totalDuration(expand(w, null))), workout: w })),
   ];
-  const updateNote = (): void => {
-    noSignatureNote.hidden = hasSignature || !app.workout || !usesPctCP(app.workout);
-  };
   const workoutList = h(
     'div',
     { class: 'choices' },
     ...choices.map((c) => {
       const input = h('input', { type: 'radio', name: 'workout', value: c.id, checked: (app.workout?.id ?? 'free') === c.id });
-      input.addEventListener('change', () => {
-        app.workout = c.workout;
-        updateNote();
-      });
+      input.addEventListener('change', () => (app.workout = c.workout));
       return h('label', { class: 'choice' }, input, ` ${c.label} `, h('span', { class: 'hint' }, `· ${c.detail}`));
     }),
   );
   const loadSignature = async (): Promise<void> => {
-    const sig = app.source ? await app.activeSignature() : null;
-    hasSignature = sig !== null;
+    const sig = await app.activeSignature();
+    const defaults: Record<string, string> = {
+      'simulator-default': ' (simulatorns standardvärden)',
+      'pm5-default': ' (standardvärden – gör test eller mata in egna)',
+    };
     signatureText.textContent = sig
       ? `PP ${Math.round(sig.pp)} W · CP ${Math.round(sig.cp)} W · W′ ${Math.round(sig.wPrime).toLocaleString('sv-SE')} J · k ${Math.round(kOf(sig))} s` +
-        (sig.id === 'simulator-default' ? ' (simulatorns standardvärden)' : '')
-      : 'Signatur saknas – gör test eller mata in';
-    updateNote();
+        (defaults[sig.id] ?? '')
+      : 'Anslut för att se aktiv signatur';
   };
 
   const update = (): void => {
@@ -145,7 +138,7 @@ export const startView: View = (root, app) => {
       error,
     ),
     h('section', { class: 'card' }, h('h2', {}, 'Signatur'), signatureText),
-    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, noSignatureNote, start),
+    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, start),
     h('nav', {}, h('button', { class: 'link', onclick: () => app.navigate('history') }, 'Historik')),
     debug.el,
   );

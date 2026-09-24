@@ -1,6 +1,6 @@
 import { RealClock, type Clock } from '../core/clock';
 import { Emitter } from '../core/events';
-import { simulatorSignature, type FitnessSignature } from '../model/signature';
+import { defaultPm5Signature, simulatorSignature, type FitnessSignature } from '../model/signature';
 import type { ConnectionState, DataSource } from '../sources/DataSource';
 import type { Pm5Source } from '../sources/pm5/ble';
 import { UsbPm5Source } from '../sources/pm5/usb';
@@ -60,12 +60,15 @@ export class App {
   }
 
   /**
-   * Active signature for the connected machine: the latest stored one, or the
-   * simulator's placeholder values when running the simulator (spec §5.1).
+   * Active signature for the connected machine: the latest stored one, otherwise
+   * the default values for the source (spec §5.1). Null when nothing is connected.
    */
   async activeSignature(): Promise<FitnessSignature | null> {
-    const machine = this.source?.machine() ?? 'skierg';
-    return (await this.store.latestSignature(machine)) ?? (this.source?.kind === 'simulator' ? simulatorSignature(machine) : null);
+    const source = this.source;
+    if (!source) return null;
+    const machine = source.machine() ?? 'skierg';
+    const stored = await this.store.latestSignature(machine);
+    return stored ?? (source.kind === 'simulator' ? simulatorSignature(machine) : defaultPm5Signature(machine));
   }
 
   get debugLogging(): boolean {
