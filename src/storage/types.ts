@@ -66,3 +66,15 @@ export interface SessionStore {
   /** Ordered by seq. */
   getChunks(sessionId: string): Promise<Chunk[]>;
 }
+
+/** Result of one maximal-effort test (spec §7.3). */
+export interface TestResult {
+  id: string;
+  sessionId: string;
+  machine: Machine;
+  duration: number; // s
+  avgPower: number; // W, from the 1 Hz series over the maximal effort
+  date: string; // ISO 8601
+  /** From a simulator session; kept apart from real results. */
+  simulated?: boolean;
+}

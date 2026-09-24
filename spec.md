@@ -191,6 +191,7 @@ interface FitnessSignature {
 - **Härlett värde:** `k = wPrime / (pp − cp)`, i sekunder.
 - **Validering:** `pp > cp > 0` och `wPrime > 0`.
 - **Lagring:** Signaturer sparas append-only per maskintyp. Den aktiva signaturen är den senaste för aktuell maskin.
+- **Simulerade signaturer:** En signatur som anpassats från simulatortest får `simulated: true` och används bara med simulatorn, aldrig för en riktig PM5. Samma sak gäller testresultat (§7.3). Så kan simulatortest inte påverka den riktiga signaturen.
 - **Simulatorns standardvärden** (inga riktiga värden): PP 500 W, CP 200 W, W′ 15 000 J, vilket ger k = 50 s.
 - **Standardsignatur för PM5** (användarens beslut 2026-09-24): PP 430 W, CP 180 W, W′ 10 000 J, vilket ger k = 40 s. Den används när ingen egen signatur finns sparad för maskinen och sparas inte i databasen. Simulatorn behåller sina egna standardvärden.
 
@@ -294,6 +295,7 @@ Gränserna ska vara konfigurerbara konstanter.
 
 - **`target`** är ett av följande: `{ "watt": number }`, `{ "pctCP": number }`, `{ "max": true }` (testinsats, inget band) eller `null` (inget mål). `pctCP` räknas om till watt när passet expanderas, med den aktiva signaturen.
 - **`kind`** är ett av: `warmup`, `interval`, `rest`, `steady`, `cooldown`, `test`.
+- **`label`** (valfri per segment): namn som visas i stället för namnet på `kind`, till exempel "Ökning".
 - **`repeat` och `rest`:** Vilan läggs *mellan* repetitionerna, inte efter den sista.
 - **`tolerance`** (valfri per segment): relativ andel av målet. Standard ±5 % [FÖRSLAG].
 - **Saknad signatur:** Om passet använder `pctCP` men ingen signatur finns, får användaren välja mellan att mata in en signatur eller köra passet utan mål.
@@ -339,7 +341,7 @@ Testpassen beskrivs i §7.
 
 Det finns tre separata testpass: `test-30s`, `test-180s` och `test-600s`. Alla har samma upplägg:
 
-1. 10 min uppvärmning på 50–60 % CP, med 2 × 10 s ökningar mot slutet (utan mål om signatur saknas)
+1. 10 min uppvärmning på 55 % CP, med 2 × 10 s ökningar på 120 % CP mot slutet (vid 8:00 och 9:00) [FÖRSLAG]
 2. 3 min lätt
 3. Maxinsatsen (`target: { "max": true }`)
 4. 5 min nedvarvning
@@ -355,7 +357,8 @@ UI-texten ska rekommendera att de tre testen görs olika dagar.
 ### 7.3 Resultat
 
 - **Testresultat:** medeleffekten under maxsegmentet, räknad från den 1 Hz-resamplade effekten. Sparas som `TestResult { id, sessionId, machine, duration, avgPower, date }`.
-- **Förslag på ny signatur:** När det finns ett resultat för alla tre längder inom 14 dagar kör appen `fit3p` och föreslår en ny signatur. Användaren godkänner eller avböjer. Om det finns flera resultat för samma längd används det senaste.
+- **Förslag på ny signatur:** När det finns ett resultat för alla tre längder inom 14 dagar kör appen `fit3p` och föreslår en ny signatur. Användaren godkänner eller avböjer. Om det finns flera resultat för samma längd används det senaste. Om de tre spänner över mer än 14 dagar ber appen användaren att göra om det äldsta. Simulerade och riktiga resultat blandas aldrig.
+- **Var:** Förslaget och resultatvyn visas i vyn efter passet (§8.3) för ett testpass.
 - **Resultatvy:** De tre punkterna med den anpassade kurvan för 10 s till 30 min (logaritmisk x-axel). Den tidigare signaturens kurva visas streckad som jämförelse.
 
 ### 7.4 Manuell signatur
@@ -492,6 +495,8 @@ Simulatorn implementerar `DataSource` och används med `SimClock`.
 - **`manual`:** Piltangenterna ändrar effekten ±10 W, och mellanslag betyder att användaren slutar dra.
 - **`fatigue`:** Simulatorn har en egen "sann" signatur och en egen W′-balans. Den kan aldrig ge mer effekt än sin egen MPA. I testsegment (`max`) ger den sin sanna modells P(t) plus brus. Standardvärden för den sanna signaturen: PP 550 W, CP 220 W, W′ 18 000 J.
 
+**Ökad effekt:** När den önskade effekten ökar med mer än 20 % (t.ex. vid starten av en maxinsats) blir draget som pågår kortare och får den nya dragtakten, i stället för att det långsamma draget först avslutas. Tidigaste slut är 0,6 s. Utan det här kommer första hårda draget upp till 1,8 s in i insatsen, och resultatet för 30 s-testet blir för lågt.
+
 **Tidsacceleration:** 1×, 5× och 20×.
 
 ---
@@ -505,7 +510,7 @@ IndexedDB-databasen heter `skierg-training`, version 1.
 | `sessions` | `{ id, startedAt, machine, mode: 'workout' \| 'test' \| 'free', workoutId?, timeline, signatureId, signatureSnapshot, status: 'completed' \| 'aborted', summary }` | `id`, index på `startedAt` |
 | `chunks` | `{ sessionId, seq, strokes: StrokeSample[], status: StatusSample[], rawLog?: string[] }` | `[sessionId, seq]` |
 | `signatures` | `FitnessSignature` | `id`, index på `machine` |
-| `testResults` | `TestResult` | `id`, index på `[machine, duration]` |
+| `testResults` | `TestResult` (`{ id, sessionId, machine, duration, avgPower, date, simulated? }`) | `id`, index på `[machine, duration]` |
 | `settings` | nyckel–värde | `key` |
 
 - **Autosparning:** Recordern skriver en chunk var 30:e sekund, så att högst 30 s data går förlorad om webbläsaren kraschar.
@@ -542,6 +547,8 @@ Om steg 0 inte kan göras direkt får agenten fortsätta med steg 1 mot simulato
 
 ### Steg 2 – Livevyn
 
+**Status: klart** (2026-09-24).
+
 - **Bygg:** `resample`, `wbal` och `mpa` med tester (§5.4–5.6), `schema`, `expand` och `runner` med tester (§6), de inbyggda passen, livevyn i Canvas med sidopanel (§8.2), Wake Lock och pip vid segmentbyte.
 - **Klart när:**
   - 4×4-passet i simulatorn på 20× visar målband, effekt och MPA som rullar synkront,
@@ -551,6 +558,8 @@ Om steg 0 inte kan göras direkt får agenten fortsätta med steg 1 mot simulato
   - referenstesterna i §5.5 och §6.2 är gröna.
 
 ### Steg 3 – Test och signatur
+
+**Kommentar till första kriteriet:** Utfallet är statistiskt. Mätt över 16 slumpfrön (2026-09-24) ligger CP alltid inom ±2 %, men W′ ligger inom ±10 % i bara 11 av 16. Med 7 % brus per drag (§10) och tre parametrar anpassade till exakt tre punkter flyttar några watt i 30 s- eller 3 min-resultatet W′ med 10 %. `tests/step3-acceptance.test.ts` kör kedjan med fasta frön.
 
 - **Bygg:** Manuell signatur, de tre testpassen och testläget (§7), `fit3p` med tester (§5.3), flödet för att godkänna en ny signatur, resultatvyn, vyn efter passet (§8.3) och JSON-backup.
 - **Klart när:**

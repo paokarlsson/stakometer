@@ -1,19 +1,11 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { FitnessSignature } from '../model/signature';
 import type { Machine } from '../sources/DataSource';
-import type { Chunk, Session, SessionStore } from './types';
+import type { BackupTarget, StoreName } from './backup';
+import type { Chunk, Session, SessionStore, TestResult } from './types';
 
 export const DB_NAME = 'skierg-training';
 export const DB_VERSION = 1;
-
-export interface TestResult {
-  id: string;
-  sessionId: string;
-  machine: Machine;
-  duration: number; // s
-  avgPower: number; // W
-  date: string; // ISO 8601
-}
 
 interface Schema extends DBSchema {
   sessions: { key: string; value: Session; indexes: { startedAt: string } };
@@ -37,7 +29,9 @@ export function openDb(name = DB_NAME): Promise<Db> {
   });
 }
 
-export class IdbStore implements SessionStore {
+export class IdbStore implements SessionStore, BackupTarget {
+  readonly dbVersion = DB_VERSION;
+
   constructor(private readonly db: Db) {}
 
   static async open(name = DB_NAME): Promise<IdbStore> {
@@ -60,10 +54,43 @@ export class IdbStore implements SessionStore {
     await this.db.put('chunks', chunk);
   }
 
-  /** The active signature for a machine: the latest one (spec §5.1). */
-  async latestSignature(machine: Machine): Promise<FitnessSignature | null> {
+  /**
+   * The active signature for a machine: the latest one (spec §5.1). Signatures
+   * fitted from simulator tests only count for the simulator, and vice versa.
+   */
+  async latestSignature(machine: Machine, simulated = false): Promise<FitnessSignature | null> {
     const all = await this.db.getAllFromIndex('signatures', 'machine', machine);
-    return all.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+    return all.filter((s) => !!s.simulated === simulated).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+  }
+
+  async putSignature(signature: FitnessSignature): Promise<void> {
+    await this.db.put('signatures', signature);
+  }
+
+  async putTestResult(result: TestResult): Promise<void> {
+    await this.db.put('testResults', result);
+  }
+
+  listTestResults(machine: Machine): Promise<TestResult[]> {
+    return this.db.getAll('testResults').then((all) => all.filter((r) => r.machine === machine));
+  }
+
+  getSettingRecords(): Promise<{ key: string; value: unknown }[]> {
+    return this.db.getAll('settings');
+  }
+
+  async putSettingRecords(records: readonly { key: string; value: unknown }[]): Promise<void> {
+    const tx = this.db.transaction('settings', 'readwrite');
+    await Promise.all([...records.map((r) => tx.store.put(r)), tx.done]);
+  }
+
+  readAll(store: StoreName): Promise<unknown[]> {
+    return this.db.getAll(store);
+  }
+
+  async writeAll(store: StoreName, records: readonly unknown[]): Promise<void> {
+    const tx = this.db.transaction(store, 'readwrite');
+    await Promise.all([...records.map((r) => tx.store.put(r as never)), tx.done]);
   }
 
   getChunks(sessionId: string): Promise<Chunk[]> {

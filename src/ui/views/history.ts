@@ -1,13 +1,12 @@
 import type { Session } from '../../storage/types';
-import { BUILTIN_WORKOUTS } from '../../workout/builtin';
+import { workoutById } from '../../workout/builtin';
 import type { View } from '../app';
 import { h } from '../dom';
 import { formatDate, formatDistance, formatDuration, formatPower } from '../format';
 
 const MODE_LABEL: Record<Session['mode'], string> = { free: 'Fri åkning', workout: 'Pass', test: 'Test' };
 
-const workoutLabel = (s: Session): string =>
-  (s.workoutId && BUILTIN_WORKOUTS.find((w) => w.id === s.workoutId)?.name) || MODE_LABEL[s.mode];
+const workoutLabel = (s: Session): string => workoutById(s.workoutId)?.name ?? MODE_LABEL[s.mode];
 
 const COLUMNS = ['Datum', 'Pass', 'Tid', 'Distans', 'Medeleffekt', 'Lägsta W′', 'Källa', 'Status'];
 
@@ -36,7 +35,13 @@ export const historyView: View = (root, app) => {
         : sessions.map((s) =>
             h(
               'tr',
-              {},
+              {
+                class: 'clickable',
+                onclick: () => {
+                  app.sessionId = s.id;
+                  app.navigate('session');
+                },
+              },
               h('td', {}, formatDate(s.startedAt)),
               h('td', {}, workoutLabel(s)),
               h('td', { class: 'num' }, s.summary ? formatDuration(s.summary.duration) : '–'),

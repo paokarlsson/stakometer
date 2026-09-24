@@ -1,16 +1,20 @@
 import { RealClock, type Clock } from '../core/clock';
 import { Emitter } from '../core/events';
 import { defaultPm5Signature, simulatorSignature, type FitnessSignature } from '../model/signature';
-import type { ConnectionState, DataSource } from '../sources/DataSource';
+import { analyzeSession } from '../session/analysis';
+import { testResultFrom } from '../session/testResults';
+import type { ConnectionState, DataSource, Machine } from '../sources/DataSource';
 import type { Pm5Source } from '../sources/pm5/ble';
 import { UsbPm5Source } from '../sources/pm5/usb';
 import { RawLog } from '../sources/rawlog';
 import type { Simulator } from '../sources/simulator';
 import type { IdbStore } from '../storage/db';
+import { DEFAULT_SETTINGS, settingsFromRecords, settingsToRecords, type Settings } from '../storage/settings';
+import type { Session, TestResult } from '../storage/types';
 import type { Workout } from '../workout/schema';
 import { Beeper } from './audio';
 
-export type ViewName = 'start' | 'live' | 'history';
+export type ViewName = 'start' | 'live' | 'history' | 'session' | 'settings';
 
 /** Tears down listeners and timers when leaving a view. */
 export type Cleanup = () => void;
@@ -24,8 +28,13 @@ export class App {
   readonly sourceChanged = new Emitter<ConnectionState>();
   /** The workout chosen on the start page; null = free ride. */
   workout: Workout | null = null;
-  /** Current target in W, read by the simulator's followTarget mode. Set by the live view. */
+  /** Current target in W, read by the simulator. Set by the live view. */
   target: () => number | null = () => null;
+  /** Duration of the maximal effort in progress, read by the simulator's fatigue mode. */
+  maxEffort: () => number | null = () => null;
+  /** The session shown by the session view. */
+  sessionId: string | null = null;
+  settings: Settings = DEFAULT_SETTINGS;
   readonly beeper = new Beeper();
   /** Debug log of raw PM data (settings §8.5, step 0). Kept across views. */
   readonly rawLog = new RawLog();
@@ -59,16 +68,42 @@ export class App {
     await this.useSource(new UsbPm5Source(device, clock), clock);
   }
 
+  async loadSettings(): Promise<void> {
+    this.settings = settingsFromRecords(await this.store.getSettingRecords());
+  }
+
+  async saveSettings(settings: Settings): Promise<void> {
+    await this.store.putSettingRecords(settingsToRecords(settings));
+    this.settings = settings;
+  }
+
+  /** The machine in use: the manual choice in settings, else what the PM reports, else SkiErg (spec §8.5). */
+  machine(): Machine {
+    const choice = this.settings.machine;
+    return choice !== 'auto' ? choice : (this.source?.machine() ?? 'skierg');
+  }
+
   /**
    * Active signature for the connected machine: the latest stored one, otherwise
-   * the default values for the source (spec §5.1). Null when nothing is connected.
+   * the default values for the source (spec §5.1). Signatures fitted from simulator
+   * tests are only used with the simulator. Null when nothing is connected.
    */
   async activeSignature(): Promise<FitnessSignature | null> {
     const source = this.source;
     if (!source) return null;
-    const machine = source.machine() ?? 'skierg';
-    const stored = await this.store.latestSignature(machine);
-    return stored ?? (source.kind === 'simulator' ? simulatorSignature(machine) : defaultPm5Signature(machine));
+    const machine = this.machine();
+    const simulated = source.kind === 'simulator';
+    const stored = await this.store.latestSignature(machine, simulated);
+    return stored ?? (simulated ? simulatorSignature(machine) : defaultPm5Signature(machine));
+  }
+
+  /** After a session: stores the test result of a completed test (spec §7.3). */
+  async completeSession(session: Session): Promise<TestResult | null> {
+    if (session.mode !== 'test') return null;
+    const analysis = analyzeSession(session, await this.store.getChunks(session.id), this.settings.skiba);
+    const result = testResultFrom(session, analysis);
+    if (result) await this.store.putTestResult(result);
+    return result;
   }
 
   get debugLogging(): boolean {

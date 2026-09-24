@@ -157,3 +157,21 @@ describe('beepsDue', () => {
     expect(beepsDue(10, 9)).toBe(0);
   });
 });
+
+describe('test workouts (§7.1)', () => {
+  it('have 10 min warm-up with two pickups, 3 min easy, the max effort and 5 min cool-down', async () => {
+    const { TEST_WORKOUTS } = await import('../src/workout/builtin');
+    const { maxEffortDuration } = await import('../src/workout/schema');
+    expect(TEST_WORKOUTS.map((w) => [w.id, maxEffortDuration(w)])).toEqual([
+      ['test-30s', 30],
+      ['test-180s', 180],
+      ['test-600s', 600],
+    ]);
+    const t = expand(TEST_WORKOUTS[1]!, { cp: 200 });
+    expect(t.map((s) => s.label)).toEqual(['Uppvärmning', 'Ökning', 'Uppvärmning', 'Ökning', 'Uppvärmning', 'Lätt', 'Maxinsats – MAX', 'Nedvarvning']);
+    expect(t[5]!.start).toBe(600);
+    expect(t[6]).toMatchObject({ start: 780, end: 960, isMax: true, targetW: null });
+    expect(totalDuration(t)).toBe(1260);
+    expect(maxEffortDuration(fourByFour)).toBeNull();
+  });
+});

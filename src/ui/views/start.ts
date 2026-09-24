@@ -3,7 +3,7 @@ import { Pm5Source } from '../../sources/pm5/ble';
 import { UsbPm5Source } from '../../sources/pm5/usb';
 import { Simulator, type SimMode } from '../../sources/simulator';
 import { kOf } from '../../model/signature';
-import { BUILTIN_WORKOUTS } from '../../workout/builtin';
+import { BUILTIN_WORKOUTS, TEST_WORKOUTS } from '../../workout/builtin';
 import { expand, totalDuration } from '../../workout/expand';
 import type { View } from '../app';
 import { debugPanel } from '../debugPanel';
@@ -25,6 +25,7 @@ export const startView: View = (root, app) => {
     { id: 'sim-mode' },
     h('option', { value: 'followTarget' }, 'Jämn effekt'),
     h('option', { value: 'manual' }, 'Manuell (piltangenter)'),
+    h('option', { value: 'fatigue' }, 'Trötthet (sann signatur 550/220/18 000)'),
   );
   const usbSupported = UsbPm5Source.isSupported();
   const bleSupported = Pm5Source.isSupported();
@@ -65,7 +66,7 @@ export const startView: View = (root, app) => {
   useSim.addEventListener('click', async () => {
     error.hidden = true;
     const clock = new SimClock(Number(speed.value) as SimSpeed);
-    await app.useSource(new Simulator(clock, { mode: mode.value as SimMode, target: () => app.target() }), clock);
+    await app.useSource(new Simulator(clock, { mode: mode.value as SimMode, target: () => app.target(), maxEffort: () => app.maxEffort() }), clock);
   });
 
   disconnect.addEventListener('click', () => void app.disconnect());
@@ -76,18 +77,21 @@ export const startView: View = (root, app) => {
 
   // Workout choice (spec §8.1): built-in workouts and free ride.
   const signatureText = h('p', { class: 'hint' }, 'Anslut för att se aktiv signatur');
-  const choices = [
-    { id: 'free', label: 'Fri åkning', detail: 'ingen tidslinje', workout: null },
-    ...BUILTIN_WORKOUTS.map((w) => ({ id: w.id, label: w.name, detail: formatDuration(totalDuration(expand(w, null))), workout: w })),
-  ];
+  const asChoice = (w: (typeof BUILTIN_WORKOUTS)[number]) => ({ id: w.id, label: w.name, detail: formatDuration(totalDuration(expand(w, null))), workout: w });
+  const choices = [{ id: 'free', label: 'Fri åkning', detail: 'ingen tidslinje', workout: null }, ...BUILTIN_WORKOUTS.map(asChoice)];
+  const testChoices = TEST_WORKOUTS.map(asChoice);
+  const radio = (c: (typeof choices)[number]) => {
+    const input = h('input', { type: 'radio', name: 'workout', value: c.id, checked: (app.workout?.id ?? 'free') === c.id });
+    input.addEventListener('change', () => (app.workout = c.workout));
+    return h('label', { class: 'choice' }, input, ` ${c.label} `, h('span', { class: 'hint' }, `· ${c.detail}`));
+  };
   const workoutList = h(
     'div',
     { class: 'choices' },
-    ...choices.map((c) => {
-      const input = h('input', { type: 'radio', name: 'workout', value: c.id, checked: (app.workout?.id ?? 'free') === c.id });
-      input.addEventListener('change', () => (app.workout = c.workout));
-      return h('label', { class: 'choice' }, input, ` ${c.label} `, h('span', { class: 'hint' }, `· ${c.detail}`));
-    }),
+    ...choices.map(radio),
+    h('div', { class: 'choice-group' }, '3-punktstest'),
+    h('p', { class: 'hint small' }, 'Gör de tre testen olika dagar, inom 14 dagar. När alla tre är gjorda föreslår appen en ny signatur.'),
+    ...testChoices.map(radio),
   );
   const loadSignature = async (): Promise<void> => {
     const sig = await app.activeSignature();
@@ -139,7 +143,12 @@ export const startView: View = (root, app) => {
     ),
     h('section', { class: 'card' }, h('h2', {}, 'Signatur'), signatureText),
     h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, start),
-    h('nav', {}, h('button', { class: 'link', onclick: () => app.navigate('history') }, 'Historik')),
+    h(
+      'nav',
+      { class: 'row' },
+      h('button', { class: 'link', onclick: () => app.navigate('history') }, 'Historik'),
+      h('button', { class: 'link', onclick: () => app.navigate('settings') }, 'Inställningar'),
+    ),
     debug.el,
   );
   update();

@@ -12,7 +12,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "idb": "^8.0.3"
+    "idb": "^8.0.3",
+    "uplot": "^1.6.32"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

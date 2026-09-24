@@ -10,6 +10,8 @@ export interface FitnessSignature {
   createdAt: string; // ISO 8601
   source: 'manual' | 'test3p';
   testResultIds?: string[];
+  /** Fitted from simulator tests; only used with the simulator, never for a real PM5. */
+  simulated?: boolean;
 }
 
 export type SignatureParams = Pick<FitnessSignature, 'pp' | 'cp' | 'wPrime'>;

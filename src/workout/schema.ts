@@ -7,6 +7,8 @@ export type SegmentKind = (typeof SEGMENT_KINDS)[number];
 
 export interface WorkoutSegment {
   kind: SegmentKind;
+  /** Optional name shown instead of the kind's name, e.g. "Ökning". */
+  label?: string;
   duration: number; // s
   target: Target;
   /** Relative band half-width, e.g. 0.05 = ±5 %. */
@@ -70,6 +72,10 @@ export function parseWorkout(json: unknown): Workout {
       if (!SEGMENT_KINDS.includes(raw.kind as SegmentKind)) throw new Error(`${where}: okänd kind "${String(raw.kind)}"`);
       if (!positive(raw.duration)) throw new Error(`${where}: duration måste vara > 0`);
       const seg: WorkoutSegment = { kind: raw.kind as SegmentKind, duration: raw.duration, target: parseTarget(raw.target, where) };
+      if (raw.label !== undefined) {
+        if (typeof raw.label !== 'string' || !raw.label) throw new Error(`${where}: label måste vara en text`);
+        seg.label = raw.label;
+      }
       const tolerance = parseTolerance(raw.tolerance, where);
       if (tolerance !== undefined) seg.tolerance = tolerance;
       if (raw.repeat !== undefined) {
@@ -85,6 +91,12 @@ export function parseWorkout(json: unknown): Workout {
       return seg;
     }),
   };
+}
+
+/** Duration of the workout's maximal effort (a { max: true } segment), or null if it is not a test. */
+export function maxEffortDuration(w: Workout): number | null {
+  const seg = w.segments.find((s) => s.target !== null && 'max' in s.target);
+  return seg ? seg.duration : null;
 }
 
 /** True when the workout needs a signature to turn %CP into watts. */

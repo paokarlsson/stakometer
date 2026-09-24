@@ -346,7 +346,7 @@ button.danger {
   color: var(--muted);
 }
 
-.battery-wrap[data-zone='red'] .battery-note {
+.battery-wrap[data-zone='red'][data-warn='true'] .battery-note {
   color: var(--danger);
   font-weight: 700;
 }
@@ -390,4 +390,103 @@ button.danger {
   bottom: 26px;
   font: 12px ui-monospace, monospace;
   color: var(--muted);
+}
+
+.max-overlay {
+  position: absolute;
+  top: 40px;
+  right: 24px;
+  text-align: right;
+  pointer-events: none;
+}
+
+.max-word {
+  font-size: clamp(3rem, 10vw, 7rem);
+  font-weight: 900;
+  color: var(--danger);
+  line-height: 1;
+}
+
+.max-left {
+  font-size: clamp(3rem, 9vw, 6rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.max-avg {
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-box {
+  width: 100%;
+  min-height: 300px;
+}
+
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: flex-end;
+  margin: 12px 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field input,
+.field select {
+  font: inherit;
+  width: 9rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.field select {
+  width: auto;
+}
+
+details summary {
+  cursor: pointer;
+  color: var(--muted);
+  margin: 8px 0;
+}
+
+.small-value {
+  font-size: clamp(1.6rem, 4vw, 2.4rem) !important;
+}
+
+.big-line {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.choice-group {
+  margin: 12px 0 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.history tbody tr.clickable {
+  cursor: pointer;
+}
+
+.history tbody tr.clickable:hover {
+  background: var(--panel);
+}
+
+/* uPlot legend and axes in the app's theme */
+.u-legend {
+  color: var(--text);
+  font-size: 0.85rem;
 }

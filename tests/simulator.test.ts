@@ -71,3 +71,25 @@ describe('Simulator', () => {
     expect(status.at(-1)!.paceSecPer500).toBeUndefined();
   });
 });
+
+describe('Simulator fatigue mode (§10)', () => {
+  it('holds the true P(t) in a maximal effort and never exceeds its own MPA', async () => {
+    const { powerAt } = await import('../src/model/morton3p');
+    const { TRUE_SIGNATURE } = await import('../src/sources/simulator');
+    const { strokes, sim } = await run(180, { mode: 'fatigue', maxEffort: () => 180 });
+    const expected = powerAt(180, TRUE_SIGNATURE);
+    const mean = strokes.reduce((a, s) => a + s.power, 0) / strokes.length;
+    expect(mean).toBeGreaterThan(expected * 0.95);
+    expect(mean).toBeLessThan(expected * 1.03);
+    // W′ was drawn down, and the cap follows it
+    expect(sim.trueWbal).toBeLessThan(TRUE_SIGNATURE.wPrime * 0.5);
+    expect(sim.trueMpa).toBeLessThan(TRUE_SIGNATURE.pp);
+  });
+
+  it('caps a target above its MPA', async () => {
+    const { strokes } = await run(300, { mode: 'fatigue', target: () => 800 });
+    // PP is 550; after a while W′ is gone and power approaches CP 220
+    expect(Math.max(...strokes.map((s) => s.power))).toBeLessThanOrEqual(550);
+    expect(strokes.at(-1)!.power).toBeLessThan(260);
+  });
+});

@@ -3,6 +3,7 @@ import { wbalZone } from '../../model/wbal';
 import { LiveSession } from '../../session/live';
 import { MANUAL_STEP_W } from '../../sources/simulator';
 import { expand, highestTarget } from '../../workout/expand';
+import { maxEffortDuration } from '../../workout/schema';
 import { beepsDue } from '../../workout/runner';
 import type { View } from '../app';
 import { h } from '../dom';
@@ -17,10 +18,16 @@ export const liveView: View = (root, app) => {
     return () => {};
   }
   const workout = app.workout;
+  const isTest = workout !== null && maxEffortDuration(workout) !== null;
+  const settings = app.settings;
 
   // --- DOM ---
   const canvas = h('canvas', { class: 'chart', role: 'img', 'aria-label': 'Effekt, målband och MPA över tid' });
   const countdown = h('div', { class: 'countdown', hidden: true });
+  // Test mode (spec §7.2): large "MAX", time left and the running average instead of a band.
+  const maxLeft = h('div', { class: 'max-left' });
+  const maxAvg = h('div', { class: 'max-avg' });
+  const maxOverlay = h('div', { class: 'max-overlay', hidden: true }, h('div', { class: 'max-word' }, 'MAX'), maxLeft, maxAvg);
   const banner = h('p', { class: 'banner', hidden: true }, 'Återansluter till PM5 – passet fortsätter');
   const pausedBanner = h('p', { class: 'banner', hidden: true }, 'Pausat – tidslinjen står still');
 
@@ -37,7 +44,7 @@ export const liveView: View = (root, app) => {
     const value = h('div', { class: 'value' }, '–');
     return { el: h('div', { class: big ? 'metric big' : 'metric' }, h('div', { class: 'label' }, label), value), value };
   };
-  const power = metric('Effekt (3 drag)', true);
+  const power = metric(`Effekt (${settings.powerAvgStrokes} drag)`, true);
   const rate = metric('Dragtakt');
   const heartRate = metric('Puls');
   const mpaMetric = metric('MPA');
@@ -60,7 +67,7 @@ export const liveView: View = (root, app) => {
     h(
       'div',
       { class: 'live' },
-      h('div', { class: 'live-main' }, canvas, countdown, fps, h('div', { class: 'banners' }, banner, pausedBanner)),
+      h('div', { class: 'live-main' }, canvas, countdown, maxOverlay, fps, h('div', { class: 'banners' }, banner, pausedBanner)),
       h(
         'aside',
         { class: 'live-side' },
@@ -85,8 +92,10 @@ export const liveView: View = (root, app) => {
   const stop = async (): Promise<void> => {
     if (!live || stopping) return;
     stopping = true;
-    await live.stop();
-    app.navigate('history');
+    const session = await live.stop();
+    await app.completeSession(session);
+    app.sessionId = session.id;
+    app.navigate('session');
   };
 
   const render = (): void => {
@@ -106,6 +115,13 @@ export const liveView: View = (root, app) => {
     const t = l.sessionTime();
     countdown.hidden = runner.state !== 'countdown';
     countdown.textContent = String(Math.ceil(-t));
+    const inMax = runner.state !== 'finished' && runner.current()?.segment.isMax === true;
+    maxOverlay.hidden = !inMax;
+    if (inMax) {
+      maxLeft.textContent = formatDuration(Math.ceil(runner.current()!.remaining));
+      const avg = l.maxEffortAverage();
+      maxAvg.textContent = avg === null ? '–' : `snitt ${Math.round(avg)} W`;
+    }
     pausedBanner.hidden = runner.state !== 'paused';
     pauseBtn.textContent = runner.state === 'paused' ? 'Fortsätt' : 'Paus';
     pauseBtn.disabled = runner.state !== 'running' && runner.state !== 'paused';
@@ -132,11 +148,13 @@ export const liveView: View = (root, app) => {
     const frac = l.wbalFraction();
     battery.hidden = frac === null;
     if (frac !== null) {
-      const zone = wbalZone(frac);
+      const zone = wbalZone(frac, settings.zones);
       batteryFill.style.height = `${Math.min(Math.max(frac, 0), 1) * 100}%`;
       battery.dataset.zone = zone;
       batteryText.textContent = `${Math.round(Math.max(frac, 0) * 100)} %`;
-      batteryNote.textContent = frac < 0 ? 'över modellen' : zone === 'red' ? 'Avsluta intervallet' : 'W′';
+      // No W′ warnings in test mode (spec §5.7, §7.2).
+      batteryNote.textContent = frac < 0 ? 'över modellen' : zone === 'red' && !isTest ? 'Avsluta intervallet' : 'W′';
+      battery.dataset.warn = String(!isTest);
     }
 
     const p = l.currentPowerAvg();
@@ -216,15 +234,19 @@ export const liveView: View = (root, app) => {
 
   void (async () => {
     const signature = await app.activeSignature();
-    const timeline = workout ? expand(workout, signature) : null;
+    const timeline = workout ? expand(workout, signature, settings.tolerance) : null;
     live = new LiveSession(source, clock, app.store, {
-      mode: workout ? 'workout' : 'free',
+      mode: isTest ? 'test' : workout ? 'workout' : 'free',
+      machine: app.machine(),
+      powerAvgStrokes: settings.powerAvgStrokes,
+      skiba: settings.skiba,
       ...(workout && { workoutId: workout.id }),
       timeline,
       signature,
     });
     const session = live;
     app.target = () => session.runner.target();
+    app.maxEffort = () => session.maxEffortDuration();
     chart = new LiveChart(canvas, yMaxFor(timeline ? highestTarget(timeline) : null, signature?.cp ?? null));
     await live.start();
     void lockScreen();
@@ -236,6 +258,7 @@ export const liveView: View = (root, app) => {
     chart?.dispose();
     offConnection();
     app.target = () => null;
+    app.maxEffort = () => null;
     window.removeEventListener('keydown', onKey);
     window.removeEventListener('pagehide', onHide);
     document.removeEventListener('visibilitychange', onVisibility);

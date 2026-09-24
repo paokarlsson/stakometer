@@ -7,7 +7,7 @@ import { mpa } from '../model/mpa';
 import { Resampler, STALE_AFTER_S } from '../model/resample';
 import type { FitnessSignature } from '../model/signature';
 import { SKIBA, timeToEmpty, wbalStep, type SkibaConstants } from '../model/wbal';
-import type { DataSource, StatusSample } from '../sources/DataSource';
+import type { DataSource, Machine, StatusSample } from '../sources/DataSource';
 import type { Session, SessionMode, SessionStore } from '../storage/types';
 import type { TimelineSegment } from '../workout/schema';
 import { WorkoutRunner } from '../workout/runner';
@@ -23,6 +23,8 @@ export interface LivePoint {
 
 export interface LiveSessionOptions {
   mode: SessionMode;
+  /** Machine recorded with the session; defaults to what the source reports, else SkiErg. */
+  machine?: Machine;
   workoutId?: string;
   timeline: readonly TimelineSegment[] | null;
   signature: FitnessSignature | null;
@@ -44,6 +46,8 @@ export class LiveSession {
   lastStatus: StatusSample | null = null;
 
   private readonly resampler = new Resampler();
+  private maxSum = 0;
+  private maxCount = 0;
   private readonly recent: number[] = [];
   private lastStrokeT = -Infinity;
   private lastStrokeRate: number | null = null;
@@ -71,7 +75,7 @@ export class LiveSession {
     const zero = this.clock.now() - this.runner.sessionTime();
     const session = await this.recorder.start(this.source, {
       mode: this.opts.mode,
-      machine: this.source.machine() ?? 'skierg',
+      machine: this.opts.machine ?? this.source.machine() ?? 'skierg',
       ...(this.opts.workoutId !== undefined && { workoutId: this.opts.workoutId }),
       timeline: this.opts.timeline,
       signature: this.opts.signature,
@@ -102,6 +106,11 @@ export class LiveSession {
     const start = this.resampler.seconds;
     this.resampler.advanceTo(t).forEach((p, i) => {
       const n = start + i + 1;
+      // Running average of the maximal effort, from the 1 Hz series like the test result (§7.2, §7.3).
+      if (this.runner.segmentAt(this.runner.timelineAt(n - 0.5))?.isMax) {
+        this.maxSum += p;
+        this.maxCount += 1;
+      }
       if (!sig || this.wbal === null) return;
       this.wbal = wbalStep(this.wbal, p, sig, 1, this.skiba);
       if (!this.minWbal || this.wbal < this.minWbal.value) this.minWbal = { value: this.wbal, t: n };
@@ -142,6 +151,18 @@ export class LiveSession {
 
   mpa(): number | null {
     return this.signature && this.wbal !== null ? mpa(this.wbal, this.signature) : null;
+  }
+
+  /** Average power so far in the maximal effort, or null before it has started. */
+  maxEffortAverage(): number | null {
+    return this.maxCount > 0 ? this.maxSum / this.maxCount : null;
+  }
+
+  /** Duration of the maximal effort in progress (running only), for the simulator's fatigue mode. */
+  maxEffortDuration(): number | null {
+    if (this.runner.state !== 'running') return null;
+    const seg = this.runner.current()?.segment;
+    return seg?.isMax ? seg.end - seg.start : null;
   }
 
   /** Seconds to empty W′ at the current power, when above CP. */

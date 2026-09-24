@@ -39,7 +39,7 @@ export function expand(workout: Workout, signature: Pick<SignatureParams, 'cp'> 
 
   for (const seg of workout.segments) {
     const reps = seg.repeat ?? 1;
-    const label = KIND_LABEL[seg.kind] ?? seg.kind;
+    const label = seg.label ?? KIND_LABEL[seg.kind] ?? seg.kind;
     for (let i = 1; i <= reps; i++) {
       add(seg.kind, reps > 1 ? `${label} ${i}/${reps}` : label, seg.duration, seg.target, tol(seg, defaultTolerance));
       if (seg.rest && i < reps) {

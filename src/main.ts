@@ -3,9 +3,17 @@ import { IdbStore } from './storage/db';
 import { App, type Cleanup, type View, type ViewName } from './ui/app';
 import { historyView } from './ui/views/history';
 import { liveView } from './ui/views/live';
+import { sessionView } from './ui/views/session';
+import { settingsView } from './ui/views/settings';
 import { startView } from './ui/views/start';
 
-const views: Record<ViewName, View> = { start: startView, live: liveView, history: historyView };
+const views: Record<ViewName, View> = {
+  start: startView,
+  live: liveView,
+  history: historyView,
+  session: sessionView,
+  settings: settingsView,
+};
 
 async function main(): Promise<void> {
   const root = document.getElementById('app');
@@ -19,8 +27,10 @@ async function main(): Promise<void> {
   const app = new App(store, (name) => {
     cleanup();
     root.replaceChildren();
+    window.scrollTo(0, 0);
     cleanup = views[name](root, app);
   });
+  await app.loadSettings();
   app.navigate('start');
 
   // USB is the default: connect automatically when a permitted PM is (or gets) plugged in.

@@ -1,13 +1,24 @@
-// Simulated PM5 (spec §10). The `fatigue` mode needs the W′ model and arrives in step 3.
+// Simulated PM5 (spec §10).
 import type { Clock } from '../core/clock';
+import { mpa } from '../model/mpa';
+import { powerAt } from '../model/morton3p';
+import type { SignatureParams } from '../model/signature';
+import { wbalStep } from '../model/wbal';
 import { BaseSource, type Machine } from './DataSource';
 
-export type SimMode = 'followTarget' | 'manual';
+export type SimMode = 'followTarget' | 'manual' | 'fatigue';
+
+/** The fatigue mode's "true" signature (spec §10). */
+export const TRUE_SIGNATURE: SignatureParams = { pp: 550, cp: 220, wPrime: 18_000 };
 
 export interface SimulatorOptions {
   mode?: SimMode;
-  /** Current target in W for `followTarget`; null means no target. */
+  /** Current target in W for `followTarget` and `fatigue`; null means no target. */
   target?: () => number | null;
+  /** Duration of the maximal effort in progress, or null (for `fatigue`). */
+  maxEffort?: () => number | null;
+  /** The fatigue mode's own signature. */
+  trueSignature?: SignatureParams;
   /** Base power for `followTarget` when there is no target. */
   freePower?: number;
   /** Starting power for `manual`. */
@@ -26,6 +37,10 @@ export const MANUAL_STEP_W = 10;
 const STROKE_RATE_NOISE_SD = 1;
 const IDLE_AFTER_S = 4; // no stroke for this long means standing still (cf. §5.4)
 const IDLE_POLL_S = 0.25;
+/** A step up in wanted power of more than this starts a faster stroke right away. */
+const STEP_UP = 1.2;
+/** Shortest time from a step up to the end of the first harder stroke (one drive). */
+const MIN_DRIVE_S = 0.6;
 
 export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 
@@ -59,6 +74,10 @@ export class Simulator extends BaseSource {
   mode: SimMode;
 
   private readonly target: () => number | null;
+  private readonly maxEffort: () => number | null;
+  readonly trueSignature: SignatureParams;
+  /** The fatigue mode's own W′ balance, J. */
+  trueWbal: number;
   private readonly freePower: number;
   private readonly random: () => number;
   private readonly tickMs: number;
@@ -82,6 +101,9 @@ export class Simulator extends BaseSource {
     super();
     this.mode = opts.mode ?? 'followTarget';
     this.target = opts.target ?? (() => null);
+    this.maxEffort = opts.maxEffort ?? (() => null);
+    this.trueSignature = opts.trueSignature ?? TRUE_SIGNATURE;
+    this.trueWbal = this.trueSignature.wPrime;
     this.freePower = opts.freePower ?? 180;
     this.manualPower = opts.manualPower ?? 150;
     this.random = opts.random ?? Math.random;
@@ -95,6 +117,7 @@ export class Simulator extends BaseSource {
     this.lastStrokeAt = -Infinity;
     this.strokeCount = 0;
     this.distance = 0;
+    this.trueWbal = this.trueSignature.wPrime;
     this.setConnection('connected');
     if (this.tickMs > 0) this.timer = setInterval(() => this.advance(this.clock.now()), this.tickMs);
   }
@@ -109,8 +132,20 @@ export class Simulator extends BaseSource {
     return 'skierg';
   }
 
+  /** The power the simulated athlete aims for, before noise and (in fatigue mode) the MPA cap. */
   get power(): number {
-    return this.mode === 'manual' ? this.manualPower : (this.target() ?? this.freePower);
+    if (this.mode === 'manual') return this.manualPower;
+    if (this.mode === 'fatigue') {
+      // Maximal effort: even pacing at the true model's P(t) for the effort's duration.
+      const max = this.maxEffort();
+      if (max !== null) return powerAt(max, this.trueSignature);
+    }
+    return this.target() ?? this.freePower;
+  }
+
+  /** Fatigue mode: the most the simulated athlete can give right now. */
+  get trueMpa(): number {
+    return mpa(this.trueWbal, this.trueSignature);
   }
 
   get isPulling(): boolean {
@@ -151,7 +186,8 @@ export class Simulator extends BaseSource {
     if (this.mode === 'followTarget' && this.random() < DEVIATION_PROBABILITY) {
       factor *= this.random() < 0.5 ? 1 - DEVIATION : 1 + DEVIATION;
     }
-    const power = Math.max(0, Math.round(base * factor));
+    let power = Math.max(0, Math.round(base * factor));
+    if (this.mode === 'fatigue') power = Math.min(power, Math.floor(this.trueMpa));
     const rate = Math.max(1, baseStrokeRate(power) + gaussian(this.random) * STROKE_RATE_NOISE_SD);
 
     this.strokeCount += 1;
@@ -170,8 +206,15 @@ export class Simulator extends BaseSource {
   }
 
   private emitStatus(t: number): void {
+    // Like an athlete at "go": a clear step up in wanted power shortens the stroke in
+    // progress to the new rate instead of finishing the slow stroke first.
+    const wanted = this.power;
+    if (this.mode !== 'manual' && this.lastPower > 0 && wanted > this.lastPower * STEP_UP) {
+      this.nextStrokeAt = Math.min(this.nextStrokeAt, Math.max(t + MIN_DRIVE_S, this.lastStrokeAt + 60 / baseStrokeRate(wanted)));
+    }
     const moving = t - this.lastStrokeAt <= IDLE_AFTER_S;
     const speed = moving ? speedFromPower(this.lastPower) : 0;
+    this.trueWbal = wbalStep(this.trueWbal, moving ? this.lastPower : 0, this.trueSignature, STATUS_INTERVAL_S);
     this.distance += speed * STATUS_INTERVAL_S;
     this.nextStatusAt = t + STATUS_INTERVAL_S;
     this.statuses.emit({
