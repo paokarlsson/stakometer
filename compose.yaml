@@ -1,0 +1,27 @@
+# Local testing. Web Bluetooth needs localhost or HTTPS, so ports bind to 127.0.0.1;
+# WSL forwards localhost to the Windows browser (Chrome or Edge).
+#
+#   docker compose up -d                       dev server with hot reload: http://localhost:3001
+#   docker compose run --rm app npm test       unit tests
+#   docker compose --profile preview up --build preview   production build: http://localhost:4173
+#
+# After changing package.json: docker compose up --build --renew-anon-volumes
+
+services:
+  app:
+    build: .
+    init: true
+    ports:
+      - "127.0.0.1:3001:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules # keep the image's node_modules, not the host's
+    restart: unless-stopped
+
+  preview:
+    profiles: [preview]
+    build: .
+    init: true
+    command: sh -c "npm run build && npx vite preview --host 0.0.0.0 --port 4173 --strictPort"
+    ports:
+      - "127.0.0.1:4173:4173"

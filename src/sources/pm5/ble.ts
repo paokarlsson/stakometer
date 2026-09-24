@@ -1,8 +1,10 @@
-// PM5 over Web Bluetooth (spec §9). [VERIFY] Untested against a real PM5.
+// PM5 over Web Bluetooth (spec §9). Connection, machine type and 0036 follow
+// demo/public/game/sources/ble.js, which works against a real PM5. The other
+// characteristics are [VERIFY] and optional: only stroke data is required.
 import type { Clock } from '../../core/clock';
 import { Emitter } from '../../core/events';
 import { BaseSource, type Machine } from '../DataSource';
-import { CHAR, SAMPLE_RATE, SERVICE } from './uuids';
+import { CHAR, MACHINE_TYPE_SKIERG, MULTIPLEX_ID_ADDITIONAL_STROKE, SAMPLE_RATE, SERVICE } from './uuids';
 import {
   parseAdditionalStatus,
   parseAdditionalStatus2,
@@ -26,6 +28,7 @@ export interface RawNotification {
 
 export class Pm5Source extends BaseSource {
   readonly kind = 'pm5' as const;
+  readonly transport = 'ble' as const;
   /** Every notification as hex, for debug logging and fixtures. */
   readonly raw = new Emitter<RawNotification>();
 
@@ -36,8 +39,14 @@ export class Pm5Source extends BaseSource {
   private additional2: AdditionalStatus2 | null = null;
   private strokeData: StrokeData | null = null;
   private lastStrokeCount: number | null = null;
+  /** Raw erg machine type from 0016, null if it could not be read. */
+  machineTypeCode: number | null = null;
 
-  constructor(private readonly clock: Clock) {
+  /** `showAll` lists every nearby device, for when the PM5 does not match the filters. */
+  constructor(
+    private readonly clock: Clock,
+    private readonly opts: { showAll?: boolean } = {},
+  ) {
     super();
   }
 
@@ -52,14 +61,24 @@ export class Pm5Source extends BaseSource {
   /** Must be called from a user gesture. */
   async connect(): Promise<void> {
     if (!navigator.bluetooth) throw new Error('Web Bluetooth stöds inte i den här webbläsaren.');
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: 'PM5' }],
-      optionalServices: [SERVICE.deviceInfo, SERVICE.control, SERVICE.rowing],
-    });
+    const optionalServices = [SERVICE.discovery, SERVICE.deviceInfo, SERVICE.control, SERVICE.rowing];
+    // Filter on the advertised discovery service, not the name: the name may be
+    // missing from the advertisement on Windows.
+    const device = await navigator.bluetooth.requestDevice(
+      this.opts.showAll
+        ? { acceptAllDevices: true, optionalServices }
+        : { filters: [{ services: [SERVICE.discovery] }], optionalServices },
+    );
     this.device = device;
     this.userDisconnect = false;
+    try {
+      await this.setup();
+    } catch (err) {
+      device.gatt?.disconnect();
+      this.device = null;
+      throw new Error(`Kunde inte ansluta till ${device.name ?? 'enheten'}. Är det en PM5? (${err instanceof Error ? err.message : err})`);
+    }
     device.addEventListener('gattserverdisconnected', this.onGattDisconnected);
-    await this.setup();
     this.setConnection('connected');
   }
 
@@ -71,40 +90,66 @@ export class Pm5Source extends BaseSource {
   }
 
   machine(): Machine | null {
-    // The SkiErg value of the machine type enum in 0032 is unknown (spec §9.3).
-    return null;
+    // Only the SkiErg value is known; anything else falls back to the settings choice.
+    return this.machineTypeCode === MACHINE_TYPE_SKIERG ? 'skierg' : null;
   }
 
   private async setup(): Promise<void> {
     const gatt = this.device?.gatt;
     if (!gatt) throw new Error('PM5 saknar GATT-server.');
     const server = await gatt.connect();
-    const rowing = await server.getPrimaryService(SERVICE.rowing);
 
-    const rate = await rowing.getCharacteristic(CHAR.sampleRate);
-    await rate.writeValue(new Uint8Array([SAMPLE_RATE.ms100]));
-
-    const handlers: [string, (v: DataView) => void][] = [
-      [CHAR.generalStatus, this.onGeneralStatus],
-      [CHAR.additionalStatus, (v) => (this.additional = parseAdditionalStatus(v))],
-      [CHAR.additionalStatus2, (v) => (this.additional2 = parseAdditionalStatus2(v))],
-      [CHAR.strokeData, (v) => (this.strokeData = parseStrokeData(v))],
-      [CHAR.additionalStrokeData, this.onAdditionalStrokeData],
-    ];
-    for (const [uuid, handle] of handlers) {
-      const ch = await rowing.getCharacteristic(uuid);
-      ch.addEventListener('characteristicvaluechanged', () => {
-        if (!ch.value) return;
-        if (this.raw.size > 0) this.raw.emit({ ts: this.clock.now(), char: uuid.slice(4, 8), hex: toHex(ch.value) });
-        try {
-          handle(ch.value);
-        } catch (err) {
-          console.warn(`PM5 ${uuid.slice(4, 8)}:`, err);
-        }
-      });
-      await ch.startNotifications();
+    try {
+      const info = await server.getPrimaryService(SERVICE.deviceInfo);
+      this.machineTypeCode = (await (await info.getCharacteristic(CHAR.machineType)).readValue()).getUint8(0);
+    } catch (err) {
+      console.warn('PM5: could not read machine type:', err);
     }
+
+    const rowing = await server.getPrimaryService(SERVICE.rowing);
+    try {
+      await (await rowing.getCharacteristic(CHAR.sampleRate)).writeValue(new Uint8Array([SAMPLE_RATE.ms100]));
+    } catch (err) {
+      console.warn('PM5: could not set sample rate:', err);
+    }
+
+    const subscribe = async (uuid: string, handle: (v: DataView) => void): Promise<boolean> => {
+      try {
+        const ch = await rowing.getCharacteristic(uuid);
+        ch.addEventListener('characteristicvaluechanged', () => {
+          if (!ch.value) return;
+          if (this.raw.size > 0) this.raw.emit({ ts: this.clock.now(), char: uuid.slice(4, 8), hex: toHex(ch.value) });
+          try {
+            handle(ch.value);
+          } catch (err) {
+            console.warn(`PM5 ${uuid.slice(4, 8)}:`, err);
+          }
+        });
+        await ch.startNotifications();
+        return true;
+      } catch (err) {
+        console.warn(`PM5: no notifications on ${uuid.slice(4, 8)}:`, err);
+        return false;
+      }
+    };
+
+    // Stroke data is required; the multiplexed characteristic is the fallback.
+    const strokes =
+      (await subscribe(CHAR.additionalStrokeData, this.onAdditionalStrokeData)) ||
+      (await subscribe(CHAR.multiplexed, this.onMultiplexed));
+    if (!strokes) throw new Error('PM5 skickar ingen dragdata (varken 0036 eller 0080).');
+
+    await subscribe(CHAR.generalStatus, this.onGeneralStatus);
+    await subscribe(CHAR.additionalStatus, (v) => (this.additional = parseAdditionalStatus(v)));
+    await subscribe(CHAR.additionalStatus2, (v) => (this.additional2 = parseAdditionalStatus2(v)));
+    await subscribe(CHAR.strokeData, (v) => (this.strokeData = parseStrokeData(v)));
   }
+
+  private readonly onMultiplexed = (v: DataView): void => {
+    if (v.byteLength > 0 && v.getUint8(0) === MULTIPLEX_ID_ADDITIONAL_STROKE) {
+      this.onAdditionalStrokeData(new DataView(v.buffer, v.byteOffset + 1, v.byteLength - 1));
+    }
+  };
 
   private readonly onGeneralStatus = (v: DataView): void => {
     const g = parseGeneralStatus(v);
@@ -125,11 +170,9 @@ export class Pm5Source extends BaseSource {
     if (d.strokeCount === this.lastStrokeCount) return; // repeated notification for the same stroke
     this.lastStrokeCount = d.strokeCount;
 
-    const raw: Record<string, number> = {
-      strokeCalories: d.strokeCalories,
-      projectedWorkTime: d.projectedWorkTime,
-      projectedWorkDistance: d.projectedWorkDistance,
-    };
+    const raw: Record<string, number> = { strokeCalories: d.strokeCalories };
+    if (d.projectedWorkTime !== null) raw.projectedWorkTime = d.projectedWorkTime;
+    if (d.projectedWorkDistance !== null) raw.projectedWorkDistance = d.projectedWorkDistance;
     const sd = this.strokeData;
     if (sd) {
       raw.sdElapsed = sd.elapsed;

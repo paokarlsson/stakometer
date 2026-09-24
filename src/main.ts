@@ -22,6 +22,11 @@ async function main(): Promise<void> {
     cleanup = views[name](root, app);
   });
   app.navigate('start');
+
+  // USB is the default: connect automatically when a permitted PM is (or gets) plugged in.
+  const autoConnect = (): void => void app.autoConnectUsb().catch((err) => console.warn('USB auto-connect:', err));
+  navigator.hid?.addEventListener('connect', autoConnect);
+  autoConnect();
 }
 
 void main();

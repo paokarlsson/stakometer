@@ -102,6 +102,11 @@ describe('parseAdditionalStrokeData (0036)', () => {
     });
   });
 
+  it('accepts the 9-byte multiplexed payload without projected fields', () => {
+    const d = parseAdditionalStrokeData(view(le(4550, 3), le(312, 2), le(1100, 2), le(42, 2)));
+    expect(d).toMatchObject({ power: 312, strokeCount: 42, projectedWorkTime: null, projectedWorkDistance: null });
+  });
+
   it('parses from hex as logged', () => {
     const v = fromHex('c6 11 00 38 01 4c 04 02 01 08 07 00 88 13 00');
     expect(parseAdditionalStrokeData(v).power).toBe(312);

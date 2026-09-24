@@ -140,20 +140,21 @@ export interface AdditionalStrokeData {
   power: number; // W
   strokeCalories: number; // cal/h
   strokeCount: number;
-  projectedWorkTime: number; // s
-  projectedWorkDistance: number; // m
+  projectedWorkTime: number | null; // s; null when the payload is shorter (multiplexed)
+  projectedWorkDistance: number | null; // m
 }
 
+/** Layout confirmed by demo/ against a real PM5 for bytes 0–8. */
 export function parseAdditionalStrokeData(v: DataView): AdditionalStrokeData {
-  requireLength(v, 15, '0036');
+  requireLength(v, 9, '0036');
+  const full = v.byteLength >= 15;
   return {
     elapsed: u24(v, 0) * CS,
     power: u16(v, 3),
     strokeCalories: u16(v, 5),
-    // ErgometerJS notes a possible LSB/MSB swap here; confirm with fixtures.
     strokeCount: u16(v, 7),
-    projectedWorkTime: u24(v, 9),
-    projectedWorkDistance: u24(v, 12),
+    projectedWorkTime: full ? u24(v, 9) : null,
+    projectedWorkDistance: full ? u24(v, 12) : null,
   };
 }
 

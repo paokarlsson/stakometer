@@ -1,7 +1,8 @@
-import type { Clock } from '../core/clock';
+import { RealClock, type Clock } from '../core/clock';
 import { Emitter } from '../core/events';
 import type { ConnectionState, DataSource } from '../sources/DataSource';
 import type { Pm5Source } from '../sources/pm5/ble';
+import { UsbPm5Source } from '../sources/pm5/usb';
 import type { Simulator } from '../sources/simulator';
 import type { IdbStore } from '../storage/db';
 
@@ -18,6 +19,7 @@ export class App {
   /** Emits whenever the source or its connection state changes. */
   readonly sourceChanged = new Emitter<ConnectionState>();
   private offConnection: (() => void) | null = null;
+  private connecting = false;
 
   constructor(
     readonly store: IdbStore,
@@ -28,8 +30,20 @@ export class App {
     return this.source?.kind === 'simulator' ? (this.source as Simulator) : null;
   }
 
-  get pm5(): Pm5Source | null {
-    return this.source?.kind === 'pm5' ? (this.source as Pm5Source) : null;
+  get pm5(): Pm5Source | UsbPm5Source | null {
+    return this.source?.kind === 'pm5' ? (this.source as Pm5Source | UsbPm5Source) : null;
+  }
+
+  /**
+   * Connects over USB when a PM already permitted for this site is plugged in.
+   * USB is the default; Bluetooth is used only when chosen. No user gesture needed.
+   */
+  async autoConnectUsb(): Promise<void> {
+    if (this.source || this.connecting) return;
+    const device = await UsbPm5Source.findConnected();
+    if (!device || this.source) return;
+    const clock = new RealClock();
+    await this.useSource(new UsbPm5Source(device, clock), clock);
   }
 
   get connection(): ConnectionState {
@@ -38,8 +52,13 @@ export class App {
 
   async useSource(source: DataSource, clock: Clock): Promise<void> {
     await this.disconnect();
+    this.connecting = true;
+    try {
+      await source.connect();
+    } finally {
+      this.connecting = false;
+    }
     this.offConnection = source.onConnection((state) => this.sourceChanged.emit(state));
-    await source.connect();
     this.source = source;
     this.clock = clock;
     this.sourceChanged.emit(this.connection);
