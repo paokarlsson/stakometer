@@ -1,7 +1,8 @@
 import { RealClock, SimClock, type SimSpeed } from '../../core/clock';
 import { Pm5Source } from '../../sources/pm5/ble';
 import { UsbPm5Source } from '../../sources/pm5/usb';
-import { Simulator, type SimMode } from '../../sources/simulator';
+import { DEFAULT_DRAG_FACTOR, Simulator, type SimMode } from '../../sources/simulator';
+import { previousTest } from '../../session/testResults';
 import { kOf } from '../../model/signature';
 import { BUILTIN_WORKOUTS, TEST_WORKOUTS } from '../../workout/builtin';
 import { expand, totalDuration } from '../../workout/expand';
@@ -12,7 +13,7 @@ import type { FitnessSignature } from '../../model/signature';
 import type { View } from '../app';
 import { debugPanel } from '../debugPanel';
 import { h } from '../dom';
-import { formatDuration } from '../format';
+import { formatDate, formatDuration, formatPower } from '../format';
 
 export const startView: View = (root, app) => {
   const status = h('p', { class: 'status' });
@@ -31,6 +32,7 @@ export const startView: View = (root, app) => {
     h('option', { value: 'manual' }, 'Manuell (piltangenter)'),
     h('option', { value: 'fatigue' }, 'Trötthet (sann signatur 550/220/18 000)'),
   );
+  const simDrag = h('input', { type: 'number', id: 'sim-drag', min: '50', max: '250', step: '1', value: String(DEFAULT_DRAG_FACTOR), class: 'narrow' });
   const usbSupported = UsbPm5Source.isSupported();
   const bleSupported = Pm5Source.isSupported();
   const connectUsb = h('button', { disabled: !usbSupported }, 'Anslut PM5 via USB');
@@ -70,7 +72,8 @@ export const startView: View = (root, app) => {
   useSim.addEventListener('click', async () => {
     error.hidden = true;
     const clock = new SimClock(Number(speed.value) as SimSpeed);
-    await app.useSource(new Simulator(clock, { mode: mode.value as SimMode, target: () => app.target(), maxEffort: () => app.maxEffort() }), clock);
+    const dragFactor = Number(simDrag.value) || DEFAULT_DRAG_FACTOR;
+    await app.useSource(new Simulator(clock, { mode: mode.value as SimMode, dragFactor, target: () => app.target(), maxEffort: () => app.maxEffort() }), clock);
   });
 
   disconnect.addEventListener('click', () => void app.disconnect());
@@ -83,8 +86,24 @@ export const startView: View = (root, app) => {
   const signatureText = h('p', { class: 'hint' }, 'Anslut för att se aktiv signatur');
   // Planned intensity and lowest W′ for the chosen workout (fitted per settings).
   const planInfo = h('p', { class: 'hint', hidden: true });
+  // For a test: the last result of the same length and its drag factor (spec §7.3).
+  const testInfo = h('p', { class: 'hint', hidden: true });
   let signature: FitnessSignature | null = null;
+  const updateTestInfo = async (): Promise<void> => {
+    const w = app.workout;
+    const duration = w ? maxEffortDuration(w) : null;
+    const source = app.source;
+    const prev = duration !== null && source ? previousTest(await app.store.listTestResults(app.machine()), duration, source.kind === 'simulator') : undefined;
+    if (app.workout !== w) return; // the choice changed while loading
+    testInfo.hidden = !prev;
+    if (prev) {
+      testInfo.textContent =
+        `Förra testet: ${formatPower(prev.avgPower)} (${formatDate(prev.date)})` +
+        (prev.dragFactor !== undefined ? ` med dragfaktor ${prev.dragFactor}. Ställ dämparen så att dragfaktorn blir densamma.` : '.');
+    }
+  };
   const updatePlan = (): void => {
+    void updateTestInfo();
     const w = app.workout;
     const sig = signature;
     planInfo.hidden = !w || !sig || maxEffortDuration(w) !== null;
@@ -116,8 +135,12 @@ export const startView: View = (root, app) => {
     'div',
     { class: 'choices' },
     ...choices.map(radio),
-    h('div', { class: 'choice-group' }, '3-punktstest'),
-    h('p', { class: 'hint small' }, 'Gör de tre testen olika dagar, inom 14 dagar. När alla tre är gjorda föreslår appen en ny signatur.'),
+    h('div', { class: 'choice-group' }, 'Testbatteri'),
+    h(
+      'p',
+      { class: 'hint small' },
+      'Gör alla fyra testen inom 14 dagar, med samma dragfaktor. Högst två samma dag, med minst 30 min lugnt emellan – till exempel 12 min dag 1, 30 s och 3 min dag 2, 6 min dag 3. Efter tre av dem föreslår appen en ny signatur, och med alla fyra syns hur väl kurvan passar.',
+    ),
     ...testChoices.map(radio),
   );
   const loadSignature = async (): Promise<void> => {
@@ -165,13 +188,13 @@ export const startView: View = (root, app) => {
       status,
       h('div', { class: 'row' }, connectUsb, connectBle, useSim, disconnect),
       showAll,
-      h('div', { class: 'row small' }, h('label', {}, 'Simulatorhastighet ', speed), h('label', {}, 'Simulatorläge ', mode)),
+      h('div', { class: 'row small' }, h('label', {}, 'Simulatorhastighet ', speed), h('label', {}, 'Simulatorläge ', mode), h('label', {}, 'Simulatorns dragfaktor ', simDrag)),
       h('p', { class: 'hint small' }, 'En PM5 som sitter i USB ansluts automatiskt när du har valt den en gång.'),
       !usbSupported && !bleSupported && h('p', { class: 'hint' }, 'Varken WebHID eller Web Bluetooth stöds här. Använd Chrome eller Edge.'),
       error,
     ),
     h('section', { class: 'card' }, h('h2', {}, 'Signatur'), signatureText),
-    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, planInfo, start),
+    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, planInfo, testInfo, start),
     h(
       'nav',
       { class: 'row' },

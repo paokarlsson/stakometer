@@ -79,7 +79,7 @@ export function signatureChart(el: HTMLElement, points: readonly { t: number; p:
   const grid = Array.from({ length: 80 }, (_, i) => 10 * Math.pow(180, i / 79)); // 10 s … 1800 s
   const x = [...new Set([...grid, ...points.map((q) => q.t)])].sort((a, b) => a - b);
   const measured = x.map((t) => points.find((q) => q.t === t)?.p ?? null);
-  const ticks = [10, 30, 60, 180, 600, 1800];
+  const ticks = [10, 30, 60, 180, 360, 720, 1800];
 
   return mount(el, (width) => {
     const series: uPlot.Series[] = [
@@ -105,7 +105,8 @@ export function signatureChart(el: HTMLElement, points: readonly { t: number; p:
         height: 340,
         scales: { x: { time: false, distr: 3 } },
         axes: [
-          { ...axisStyle(), splits: () => ticks, values: (_u, vals) => vals.map((v) => formatDuration(v)) },
+          // Keep every tick: uPlot's log axis otherwise drops those not starting with 1.
+          { ...axisStyle(), splits: () => ticks, filter: (_u, splits) => splits, values: (_u, vals) => vals.map((v) => formatDuration(v)) },
           { ...axisStyle(), label: 'W', size: 64 },
         ],
         series,

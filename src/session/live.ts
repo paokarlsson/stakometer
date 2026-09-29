@@ -51,6 +51,7 @@ export class LiveSession {
   private readonly recent: number[] = [];
   private lastStrokeT = -Infinity;
   private lastStrokeRate: number | null = null;
+  private lastDragFactor: number | null = null;
   private offs: Unsubscribe[] = [];
   private readonly avgN: number;
   private readonly wbalOptions: WbalOptions;
@@ -90,6 +91,7 @@ export class LiveSession {
         if (this.recent.length > this.avgN) this.recent.shift();
         this.lastStrokeT = t;
         this.lastStrokeRate = s.strokeRate;
+        if (s.raw?.dragFactor !== undefined) this.lastDragFactor = s.raw.dragFactor;
         this.power.push({ t, value: this.currentPowerAvg() });
       }),
       this.source.onStatus((s) => (this.lastStatus = s)),
@@ -139,6 +141,11 @@ export class LiveSession {
   strokeRate(): number | null {
     if (this.sessionTime() - this.lastStrokeT > STALE_AFTER_S) return null;
     return this.lastStatus?.strokeRate ?? this.lastStrokeRate;
+  }
+
+  /** Drag factor from the latest stroke that had one, null when the source gives none. */
+  dragFactor(): number | null {
+    return this.lastDragFactor;
   }
 
   heartRate(): number | null {

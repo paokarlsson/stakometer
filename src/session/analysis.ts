@@ -46,8 +46,19 @@ export interface SessionAnalysis {
   /** Timeline time at the middle of each sample; null during pauses or without a timeline. */
   timeline: (number | null)[];
   segments: SegmentStats[];
-  /** The maximal effort, if the session had one. `complete` when all of it was recorded. */
-  maxEffort: { segment: TimelineSegment; avgPower: number; complete: boolean } | null;
+  /**
+   * The maximal effort, if the session had one. `complete` when all of it was recorded.
+   * `dragFactor` is the median over its strokes, null when the source gives none.
+   */
+  maxEffort: { segment: TimelineSegment; avgPower: number; complete: boolean; dragFactor: number | null } | null;
+}
+
+/** Median, or null for an empty list. */
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const v = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 ? v[mid]! : (v[mid - 1]! + v[mid]!) / 2;
 }
 
 export function analyzeSession(session: Session, chunks: readonly Chunk[], wbalOptions: WbalOptions = DEFAULT_WBAL): SessionAnalysis {
@@ -76,9 +87,20 @@ export function analyzeSession(session: Session, chunks: readonly Chunk[], wbalO
   });
 
   const max = segments.find((s) => s.segment.isMax);
+  const maxDragFactors = (seg: TimelineSegment): number[] =>
+    strokes.flatMap((s) => {
+      const tl = session.timeline ? toTimeline(s.t) : null;
+      const df = s.raw?.dragFactor;
+      return tl !== null && tl >= seg.start && tl < seg.end && df !== undefined ? [df] : [];
+    });
   const maxEffort =
     max && max.avgPower !== null
-      ? { segment: max.segment, avgPower: max.avgPower, complete: max.seconds >= max.segment.end - max.segment.start - 1 }
+      ? {
+          segment: max.segment,
+          avgPower: max.avgPower,
+          complete: max.seconds >= max.segment.end - max.segment.start - 1,
+          dragFactor: median(maxDragFactors(max.segment)),
+        }
       : null;
 
   return { power, wbal, timeline, segments, maxEffort };

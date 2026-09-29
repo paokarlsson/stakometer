@@ -7,7 +7,7 @@
 
 ## 0. Arbetsregler
 
-- **Ordning:** Bygg i den ordning som anges i §12 (steg 0–3). Ett steg i taget. Varje steg ska uppfylla sina acceptanskriterier innan nästa påbörjas.
+- **Ordning:** Bygg i den ordning som anges i §12 (steg 0–4) och därefter i `plan.md` §7. Ett steg i taget. Varje steg ska uppfylla sina acceptanskriterier innan nästa påbörjas.
 - **Beslutsnivåer:** Punkter märkta **[LÅST]** får inte ändras. Punkter märkta **[FÖRSLAG]** får ändras om du motiverar varför i commit- eller PR-beskrivningen.
 - **[VERIFIERA]:** PM5-protokollet skrevs ursprungligen ur minnet. Det som är bekräftat mot en riktig PM5 är märkt så i §9. Det som fortfarande är märkt [VERIFIERA] ska kontrolleras mot rådata innan du bygger vidare på det. `demo/` (committas inte) innehåller kod som fungerar mot en riktig PM5 och är facit vid tveksamheter.
 - **Ren modellkod:** Funktionerna i §5 och §6.2 ska vara rena funktioner utan beroenden till UI, BLE eller lagring, och ha enhetstester.
@@ -39,7 +39,7 @@ En webbapp för Concept2 SkiErg med PM5-monitor som:
 - Lokal lagring (IndexedDB) med rådata per drag och autosparning under passet
 - Rullande livevy med målband, effekt, MPA-linje och W′-batteri
 - Passformat i JSON, med tre inbyggda pass och läget "Fri åkning"
-- Fitness Signature per maskintyp: manuell inmatning samt 3-punktstest med kurvanpassning
+- Fitness Signature per maskintyp: manuell inmatning samt ett testbatteri med fyra test och kurvanpassning
 - Vy efter passet och en enkel historiklista
 - Backup av databasen som JSON (export och import)
 
@@ -213,7 +213,7 @@ P(t) = CP + W′ / (t + k)
 
 1. Gå igenom k från 1 till 300 s i steg om 0,5 s. För varje k, lös CP och W′ med minsta kvadrat och räkna ut kvadratsumman av felen (SSE).
 2. Förfina runt bästa k med gyllene snittet-sökning, tolerans 0,01 s.
-3. Returnera `{ cp, wPrime, k, pp: cp + wPrime / k, sse }`.
+3. Returnera `{ cp, wPrime, k, pp: cp + wPrime / k, sse, residuals }`, där `residuals` är uppmätt minus modellerad effekt per punkt, i watt.
 
 **Validering:** `cp > 0`, `wPrime > 0`, `pp > cp`, och k får inte hamna på sökintervallets kant. Om något faller returneras ett fel med en begriplig förklaring, och UI:t föreslår manuell inmatning.
 
@@ -367,31 +367,35 @@ Under de 5 s före en intervall och de 5 s efter den går mål och band linjärt
 
 ---
 
-## 7. 3-punktstest
+## 7. Testbatteri
 
 ### 7.1 Testpassen
 
-Det finns tre separata testpass: `test-30s`, `test-180s` och `test-600s`. Alla har samma upplägg:
+Testbatteriet har fyra separata testpass: `test-30s`, `test-180s`, `test-360s` och `test-720s` (beslut 2026-09-29, `plan.md` §3). Alla har samma upplägg:
 
 1. 10 min uppvärmning på 55 % CP, med 2 × 10 s ökningar på 120 % CP mot slutet (vid 8:00 och 9:00) [FÖRSLAG]
 2. 3 min lätt
 3. Maxinsatsen (`target: { "max": true }`)
 4. 5 min nedvarvning
 
-UI-texten ska rekommendera att de tre testen görs olika dagar.
+UI-texten ska rekommendera att alla fyra görs inom 14 dagar med samma dragfaktor, högst två samma dag med minst 30 min lugnt emellan, till exempel 12 min dag 1, 30 s och 3 min dag 2 och 6 min dag 3.
 
 ### 7.2 Testläge
 
 - Inga varningar för W′ under maxinsatsen.
 - Stor nedräkning och texten "MAX" i stället för målband.
 - Löpande medeleffekt för insatsen visas stort.
+- Före maxinsatsen visas en varning om dragfaktorn skiljer sig från förra testet med samma längd (§7.3), så att dämparen hinner ställas om under uppvärmningen.
 
 ### 7.3 Resultat
 
-- **Testresultat:** medeleffekten under maxsegmentet, räknad från den 1 Hz-resamplade effekten. Sparas som `TestResult { id, sessionId, machine, duration, avgPower, date }`.
-- **Förslag på ny signatur:** När det finns ett resultat för alla tre längder inom 14 dagar kör appen `fit3p` och föreslår en ny signatur. Användaren godkänner eller avböjer. Om det finns flera resultat för samma längd används det senaste. Om de tre spänner över mer än 14 dagar ber appen användaren att göra om det äldsta. Simulerade och riktiga resultat blandas aldrig.
+- **Testresultat:** medeleffekten under maxsegmentet, räknad från den 1 Hz-resamplade effekten. Sparas som `TestResult { id, sessionId, machine, duration, avgPower, date, dragFactor? }`. `dragFactor` är medianen av dragfaktorn för dragen i maxinsatsen och saknas om källan inte ger någon.
+- **Förslag på ny signatur:** Appen tar det senaste resultatet för varje längd i batteriet, och av dem de som ligger inom 14 dagar från det nyaste. Finns minst tre olika längder kvar kör appen `fit3p` och föreslår en ny signatur. Användaren godkänner eller avböjer. Annars listar appen vilka längder som saknas. Simulerade och riktiga resultat blandas aldrig.
+- **Residual:** Med fyra test visar resultatvyn avvikelsen per test (uppmätt minus kurvan), SSE och största avvikelse i watt. Med tre test går kurvan genom alla punkterna, och vyn säger det i stället för att visa en residual.
+- **Dragfaktor:** Två dragfaktorer räknas som olika om de skiljer mer än 5 (`DRAG_FACTOR_TOLERANCE`) [FÖRSLAG]. Startsidan visar förra resultatet och dess dragfaktor när ett testpass väljs. Livevyn varnar före maxinsatsen (§7.2), och vyn efter passet varnar om testet avviker från förra testet med samma längd eller om testen i förslaget har olika dragfaktor.
+- **Jämförelse med signaturen:** Efter ett test visas vad signaturen i passet gav för testets längd och hur många procent resultatet avviker. Så går ett kontrolltest mellan batterierna (`plan.md` §3) att läsa av. Jämförelsen visas inte när passet använde standardvärdena (§5.1).
 - **Var:** Förslaget och resultatvyn visas i vyn efter passet (§8.3) för ett testpass.
-- **Resultatvy:** De tre punkterna med den anpassade kurvan för 10 s till 30 min (logaritmisk x-axel). Den tidigare signaturens kurva visas streckad som jämförelse.
+- **Resultatvy:** Punkterna med den anpassade kurvan för 10 s till 30 min (logaritmisk x-axel), och en tabell med datum, resultat, kurvans värde, avvikelse och dragfaktor per test. Den tidigare signaturens kurva visas streckad som jämförelse.
 
 ### 7.4 Manuell signatur
 
@@ -408,7 +412,7 @@ Under inställningar kan användaren mata in PP, CP och W′ direkt, med valider
 - Knappar för "Anslut PM5 via USB", "Anslut via Bluetooth" och "Använd simulator", plus anslutningsstatus.
 - Panelen "Felsökning": logga rådata, visa rå hex bredvid tolkade drag och ladda ned loggen som JSON.
 - Aktiv signatur. Standardvärden (§5.1) visas som sådana, med en uppmaning att göra test eller mata in egna.
-- Val av pass (inbyggda pass, testpass, fri åkning) och startknapp.
+- Val av pass (inbyggda pass, testpass, fri åkning) och startknapp. För ett testpass visas förra resultatet med samma längd och dess dragfaktor (§7.3).
 
 ### 8.2 Livevy
 
@@ -530,6 +534,8 @@ Simulatorn implementerar `DataSource` och används med `SimClock`.
 
 **Ökad effekt:** När den önskade effekten ökar med mer än 20 % (t.ex. vid starten av en maxinsats) blir draget som pågår kortare och får den nya dragtakten, i stället för att det långsamma draget först avslutas. Tidigaste slut är 0,6 s. Utan det här kommer första hårda draget upp till 1,8 s in i insatsen, och resultatet för 30 s-testet blir för lågt.
 
+**Dragfaktor:** Varje drag har `raw.dragFactor`, standard 110. Den ställs in på startsidan innan simulatorn ansluts, så att varningarna i §7.3 går att prova.
+
 **Tidsacceleration:** 1×, 5× och 20×.
 
 ---
@@ -543,7 +549,7 @@ IndexedDB-databasen heter `skierg-training`, version 1.
 | `sessions` | `{ id, startedAt, machine, mode: 'workout' \| 'test' \| 'free', workoutId?, timeline, signatureId, signatureSnapshot, status: 'completed' \| 'aborted', summary }` | `id`, index på `startedAt` |
 | `chunks` | `{ sessionId, seq, strokes: StrokeSample[], status: StatusSample[], rawLog?: string[] }` | `[sessionId, seq]` |
 | `signatures` | `FitnessSignature` | `id`, index på `machine` |
-| `testResults` | `TestResult` (`{ id, sessionId, machine, duration, avgPower, date, simulated? }`) | `id`, index på `[machine, duration]` |
+| `testResults` | `TestResult` (`{ id, sessionId, machine, duration, avgPower, date, dragFactor?, simulated? }`) | `id`, index på `[machine, duration]` |
 | `settings` | nyckel–värde | `key` |
 
 - **Autosparning:** Recordern skriver en chunk var 30:e sekund, så att högst 30 s data går förlorad om webbläsaren kraschar.
@@ -592,7 +598,7 @@ Om steg 0 inte kan göras direkt får agenten fortsätta med steg 1 mot simulato
 
 ### Steg 3 – Test och signatur
 
-**Kommentar till första kriteriet:** Utfallet är statistiskt. Mätt över 16 slumpfrön (2026-09-24, W′-modell Skiba 2015) ligger CP alltid inom ±2 %, men W′ ligger inom ±10 % i bara 12 av 16. Med 7 % brus per drag (§10) och tre parametrar anpassade till exakt tre punkter flyttar några watt i 30 s- eller 3 min-resultatet W′ med 10 %. `tests/step3-acceptance.test.ts` kör kedjan med fasta frön.
+**Kommentar till första kriteriet:** Utfallet är statistiskt. Mätt över 16 slumpfrön (2026-09-24, W′-modell Skiba 2015) ligger CP alltid inom ±2 %, men W′ ligger inom ±10 % i bara 12 av 16. Med 7 % brus per drag (§10) och tre parametrar anpassade till exakt tre punkter flyttar några watt i 30 s- eller 3 min-resultatet W′ med 10 %. Testet för kedjan ersattes i steg 4 av `tests/step4-acceptance.test.ts`.
 
 - **Bygg:** Manuell signatur, de tre testpassen och testläget (§7), `fit3p` med tester (§5.3), flödet för att godkänna en ny signatur, resultatvyn, vyn efter passet (§8.3) och JSON-backup.
 - **Klart när:**
@@ -600,6 +606,18 @@ Om steg 0 inte kan göras direkt får agenten fortsätta med steg 1 mot simulato
   - livevyn använder den nya signaturen direkt efter godkännande,
   - referenstestet i §5.3 är grönt,
   - en export följd av import i en tom databas återskapar alla pass.
+
+### Steg 4 – Testbatteriet
+
+**Status: klart** (2026-09-29). Bakgrunden står i `plan.md` §3, och steg 5–7 i `plan.md` §7.
+
+**Kommentar till första kriteriet:** Mätt över 16 slumpfrön (2026-09-29, W′-modell Skiba 2015) ligger CP alltid inom ±2 % och W′ inom ±10 % i 14 av 16, mot 12 av 16 med de tidigare testen 30 s, 3 min och 10 min. Simulatorns maxinsats följer dess sanna modell exakt, så residualen blir under 2 W. `tests/step4-acceptance.test.ts` kör kedjan med fasta frön.
+
+- **Bygg:** Testpassen `test-360s` och `test-720s` i stället för `test-600s`, förslag från minst tre längder inom 14 dagar, residual i `fit3p` och i resultatvyn, dragfaktor i `TestResult` med varningar (§7).
+- **Klart när:**
+  - fyra test i simulatorn (`fatigue`, sann signatur 550/220/18 000) ger CP inom ±3 % och W′ inom ±10 % av de sanna värdena,
+  - residualen visas,
+  - varningen för dragfaktorn syns när den ändras (simulatorns dragfaktor ställs in på startsidan, §10).
 
 ---
 

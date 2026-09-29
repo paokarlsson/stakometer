@@ -75,6 +75,8 @@ export interface TestResult {
   duration: number; // s
   avgPower: number; // W, from the 1 Hz series over the maximal effort
   date: string; // ISO 8601
+  /** Median drag factor over the maximal effort; missing when the source gives none. */
+  dragFactor?: number;
   /** From a simulator session; kept apart from real results. */
   simulated?: boolean;
 }
