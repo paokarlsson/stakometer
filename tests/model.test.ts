@@ -3,7 +3,7 @@ import { mpa } from '../src/model/mpa';
 import { powerAt, timeToExhaustion } from '../src/model/morton3p';
 import { resample, Resampler } from '../src/model/resample';
 import { DEFAULT_PM5_SIGNATURE, kOf, SIMULATOR_SIGNATURE, validateSignature } from '../src/model/signature';
-import { tau, timeToEmpty, wbalSeries, wbalStep, wbalZone } from '../src/model/wbal';
+import { DEFAULT_WBAL, recoveryTau, SKIBA, tau, timeToEmpty, wbalSeries, wbalStep, wbalZone } from '../src/model/wbal';
 
 describe('signature', () => {
   it('derives k = W′/(PP − CP)', () => {
@@ -67,7 +67,9 @@ describe('resample (§5.4)', () => {
   });
 });
 
-describe('wbal (§5.5 reference tests)', () => {
+describe('wbal: Skiba 2012 (§5.5 reference tests)', () => {
+  const skiba2012 = { model: 'skiba2012' as const, skiba: SKIBA };
+
   it('τ for CP 250 at 0 W and 200 W', () => {
     expect(tau(250)).toBeCloseTo(360.8, 1);
     expect(tau(50)).toBeCloseTo(647.2, 1);
@@ -75,9 +77,13 @@ describe('wbal (§5.5 reference tests)', () => {
 
   it('60 s at 350 W then 60 s at 0 W (W′ 20 000 J, CP 250)', () => {
     const sig = { cp: 250, wPrime: 20000 };
-    const series = wbalSeries([...Array(60).fill(350), ...Array(60).fill(0)], sig);
+    const series = wbalSeries([...Array(60).fill(350), ...Array(60).fill(0)], sig, skiba2012);
     expect(series[59]).toBe(14000);
     expect(series[119]).toBeCloseTo(14919, 0);
+  });
+
+  it('uses τ from the constants', () => {
+    expect(recoveryTau(250, 20000, skiba2012)).toBeCloseTo(360.8, 1);
   });
 
   it('may go negative', () => {
@@ -100,6 +106,44 @@ describe('wbal (§5.5 reference tests)', () => {
       'red',
       'red',
     ]);
+  });
+});
+
+describe('wbal: Skiba 2015 (default) and Bartram 2018', () => {
+  const sig = { cp: 250, wPrime: 20000 };
+
+  it('Skiba 2015 is the default, with τ = W′ / (CP − P)', () => {
+    expect(DEFAULT_WBAL.model).toBe('skiba2015');
+    expect(recoveryTau(250, 20000)).toBe(80);
+    expect(recoveryTau(0, 20000)).toBe(Infinity);
+  });
+
+  it('Skiba 2015: 60 s at 350 W then 60 s at 0 W', () => {
+    const series = wbalSeries([...Array(60).fill(350), ...Array(60).fill(0)], sig);
+    expect(series[59]).toBe(14000);
+    // 20 000 − 6 000 · e^(−60 · 250 / 20 000)
+    expect(series[119]).toBeCloseTo(20000 - 6000 * Math.exp(-0.75), 6);
+  });
+
+  it('Skiba 2015 recovers much faster at rest than Skiba 2012, and slowly near CP', () => {
+    const at = (p: number, model: 'skiba2015' | 'skiba2012') => {
+      let w = 10000;
+      for (let i = 0; i < 120; i++) w = wbalStep(w, p, sig, 1, { model, skiba: SKIBA });
+      return w;
+    };
+    expect(at(0, 'skiba2015') - 10000).toBeGreaterThan(2 * (at(0, 'skiba2012') - 10000));
+    expect(at(240, 'skiba2015') - 10000).toBeLessThan(700);
+  });
+
+  it('Bartram 2018: τ = 2287.2 · D^−0.688', () => {
+    expect(recoveryTau(180, 10000, { model: 'bartram2018', skiba: SKIBA })).toBeCloseTo(64.2, 1);
+    expect(recoveryTau(0, 10000, { model: 'bartram2018', skiba: SKIBA })).toBe(Infinity);
+  });
+
+  it('drains the same above CP in every model', () => {
+    for (const model of ['skiba2015', 'skiba2012', 'bartram2018'] as const) {
+      expect(wbalStep(5000, 300, sig, 1, { model, skiba: SKIBA })).toBe(4950);
+    }
   });
 });
 

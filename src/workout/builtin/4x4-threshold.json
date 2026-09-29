@@ -2,14 +2,12 @@
   "id": "4x4-threshold",
   "name": "4×4 min tröskel",
   "segments": [
-    { "kind": "warmup", "duration": 600, "target": { "pctCP": 60 } },
     {
       "kind": "interval",
       "duration": 240,
       "target": { "pctCP": 105 },
       "repeat": 4,
       "rest": { "duration": 120, "target": { "pctCP": 40 } }
-    },
-    { "kind": "cooldown", "duration": 300, "target": { "pctCP": 50 } }
+    }
   ]
 }

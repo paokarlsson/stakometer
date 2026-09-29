@@ -1,7 +1,8 @@
 // User settings (spec §8.5), stored key–value in the `settings` store.
-import { SKIBA, WBAL_ZONES, type SkibaConstants } from '../model/wbal';
+import { DEFAULT_WBAL, SKIBA, WBAL_MODELS, WBAL_ZONES, type SkibaConstants, type WbalModel, type WbalOptions } from '../model/wbal';
 import { POWER_AVG_STROKES } from '../session/live';
 import type { Machine } from '../sources/DataSource';
+import type { CalibrationMode } from '../workout/calibrate';
 import { DEFAULT_TOLERANCE } from '../workout/expand';
 
 export interface Settings {
@@ -11,17 +12,27 @@ export interface Settings {
   powerAvgStrokes: number;
   /** Lower bounds of wbal / W′ for green, yellow and orange (spec §5.7). */
   zones: { green: number; yellow: number; orange: number };
+  /** W′ recovery model (spec §5.5). */
+  wbalModel: WbalModel;
+  /** Constants for the Skiba 2012 model. */
   skiba: SkibaConstants;
   /** 'auto' uses what the PM reports (Bluetooth), falling back to SkiErg. */
   machine: 'auto' | Machine;
+  /** How workouts are fitted to the planned W′ balance (off, only lower, or land on the minimum). */
+  calibration: CalibrationMode;
+  /** Planned lowest W′ as a fraction of W′ that workouts must not go below. */
+  minWbal: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   tolerance: DEFAULT_TOLERANCE,
   powerAvgStrokes: POWER_AVG_STROKES,
   zones: { ...WBAL_ZONES },
+  wbalModel: DEFAULT_WBAL.model,
   skiba: { ...SKIBA },
   machine: 'auto',
+  calibration: 'fit',
+  minWbal: 0.3,
 };
 
 const MACHINES = ['auto', 'skierg', 'rowerg', 'bikeerg'] as const;
@@ -35,8 +46,11 @@ export function validateSettings(s: Settings): string | null {
   if (![green, yellow, orange].every(isNum) || !(1 > green && green > yellow && yellow > orange && orange > 0)) {
     return 'Zongränserna måste vara grön > gul > orange, mellan 0 och 100 %.';
   }
+  if (!WBAL_MODELS.includes(s.wbalModel)) return 'Okänd W′-modell.';
   if (![s.skiba.a, s.skiba.b, s.skiba.c].every((v) => isNum(v) && v > 0)) return 'Skiba-konstanterna måste vara positiva tal.';
   if (!MACHINES.includes(s.machine)) return 'Okänd maskintyp.';
+  if (!['off', 'lower', 'fit'].includes(s.calibration)) return 'Okänt läge för anpassning av passen.';
+  if (!isNum(s.minWbal) || s.minWbal < 0 || s.minWbal > 0.9) return 'Lägsta W′ måste vara mellan 0 och 90 %.';
   return null;
 }
 
@@ -54,4 +68,13 @@ export function settingsFromRecords(records: readonly { key: string; value: unkn
 
 export function settingsToRecords(s: Settings): { key: string; value: unknown }[] {
   return Object.entries(s).map(([key, value]) => ({ key, value }));
+}
+
+export function wbalOptions(s: Settings): WbalOptions {
+  return { model: s.wbalModel, skiba: s.skiba };
+}
+
+/** The workout's timeline fitted to the settings' lowest W′ (tests are never fitted). */
+export function calibrationOptions(s: Settings): { mode: CalibrationMode; minFraction: number; wbal: WbalOptions } {
+  return { mode: s.calibration, minFraction: s.minWbal, wbal: wbalOptions(s) };
 }

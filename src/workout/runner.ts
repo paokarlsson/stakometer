@@ -1,15 +1,17 @@
 // Runs a timeline against the app clock (spec §6.3):
-// idle → countdown (5 s) → running ⇄ paused → finished.
+// idle → countdown (10 s) → running ⇄ paused → finished.
 // Session time t = 0 when the countdown ends. The timeline follows the clock while
 // running and is frozen while paused; session time (and W′) keep going.
 import type { Clock } from '../core/clock';
 import { Emitter } from '../core/events';
 import { segmentIndexAt, totalDuration } from './expand';
+import { targetAt, type TargetPoint } from './ramp';
 import type { TimelineSegment } from './schema';
 
 export type RunnerState = 'idle' | 'countdown' | 'running' | 'paused' | 'finished';
 
-export const COUNTDOWN_S = 5;
+/** Countdown before the start (user's request 2026-09-24; spec §6.3 said 5 s). */
+export const COUNTDOWN_S = 10;
 
 /** A stretch of running: session time [sessionStart, sessionEnd) maps to timeline time from timelineStart. */
 interface Span {
@@ -139,9 +141,14 @@ export class WorkoutRunner {
     return { index, segment, remaining: segment.end - t, next: this.timeline[index + 1] ?? null };
   }
 
-  /** Target in W while running, for the simulator's followTarget mode. */
+  /** Target and band at timeline time t, including the ramps around intervals. */
+  targetPointAt(t: number | null): TargetPoint | null {
+    return t === null || !this.timeline ? null : targetAt(this.timeline, t);
+  }
+
+  /** Target in W while running (ramps included), for the simulator. */
   target(): number | null {
-    return this.current_ === 'running' ? (this.current()?.segment.targetW ?? null) : null;
+    return this.current_ === 'running' ? (this.targetPointAt(this.timelineTime())?.targetW ?? null) : null;
   }
 
   private sessionTimeAtTimeline(t: number): number {

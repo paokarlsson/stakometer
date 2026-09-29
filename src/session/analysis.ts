@@ -2,8 +2,9 @@
 // everything is recomputed from the recorded strokes and runner events (§11).
 import { resample } from '../model/resample';
 import type { SignatureParams } from '../model/signature';
-import { SKIBA, wbalSeries, type SkibaConstants } from '../model/wbal';
+import { DEFAULT_WBAL, wbalSeries, type WbalOptions } from '../model/wbal';
 import type { Chunk, RunnerEvent, Session } from '../storage/types';
+import { targetAt } from '../workout/ramp';
 import type { TimelineSegment } from '../workout/schema';
 
 /**
@@ -49,26 +50,28 @@ export interface SessionAnalysis {
   maxEffort: { segment: TimelineSegment; avgPower: number; complete: boolean } | null;
 }
 
-export function analyzeSession(session: Session, chunks: readonly Chunk[], skiba: SkibaConstants = SKIBA): SessionAnalysis {
+export function analyzeSession(session: Session, chunks: readonly Chunk[], wbalOptions: WbalOptions = DEFAULT_WBAL): SessionAnalysis {
   const strokes = chunks.flatMap((c) => c.strokes);
   const status = chunks.flatMap((c) => c.status);
   let duration = 0;
   for (const s of [...strokes, ...status]) duration = Math.max(duration, s.t);
   const power = resample(strokes, Math.floor(duration));
   const sig: SignatureParams | null = session.signatureSnapshot;
-  const wbal = sig ? wbalSeries(power, sig, skiba) : null;
+  const wbal = sig ? wbalSeries(power, sig, wbalOptions) : null;
 
   const toTimeline = timelineMapper(chunks.flatMap((c) => c.runner ?? []));
   const timeline = power.map((_, i) => (session.timeline ? toTimeline(i + 0.5) : null));
 
   const segments: SegmentStats[] = (session.timeline ?? []).map((segment) => {
-    const inside = power.filter((_, i) => {
+    const inside: { p: number; tl: number }[] = [];
+    power.forEach((p, i) => {
       const tl = timeline[i];
-      return tl !== null && tl !== undefined && tl >= segment.start && tl < segment.end;
+      if (tl !== null && tl !== undefined && tl >= segment.start && tl < segment.end) inside.push({ p, tl });
     });
-    const avgPower = inside.length > 0 ? inside.reduce((a, b) => a + b, 0) / inside.length : null;
-    const { lo, hi } = segment;
-    const inBand = lo !== null && hi !== null && inside.length > 0 ? inside.filter((p) => p >= lo && p <= hi).length / inside.length : null;
+    const avgPower = inside.length > 0 ? inside.reduce((a, x) => a + x.p, 0) / inside.length : null;
+    // The band at each second, ramps included.
+    const withBand = inside.map((x) => ({ p: x.p, band: targetAt(session.timeline!, x.tl) })).filter((x) => x.band !== null);
+    const inBand = withBand.length > 0 ? withBand.filter((x) => x.p >= x.band!.lo && x.p <= x.band!.hi).length / withBand.length : null;
     return { segment, seconds: inside.length, avgPower, inBand };
   });
 

@@ -6,7 +6,7 @@ import type { Unsubscribe } from '../core/events';
 import { mpa } from '../model/mpa';
 import { Resampler, STALE_AFTER_S } from '../model/resample';
 import type { FitnessSignature } from '../model/signature';
-import { SKIBA, timeToEmpty, wbalStep, type SkibaConstants } from '../model/wbal';
+import { DEFAULT_WBAL, timeToEmpty, wbalStep, type WbalOptions } from '../model/wbal';
 import type { DataSource, Machine, StatusSample } from '../sources/DataSource';
 import type { Session, SessionMode, SessionStore } from '../storage/types';
 import type { TimelineSegment } from '../workout/schema';
@@ -29,7 +29,7 @@ export interface LiveSessionOptions {
   timeline: readonly TimelineSegment[] | null;
   signature: FitnessSignature | null;
   powerAvgStrokes?: number;
-  skiba?: SkibaConstants;
+  wbal?: WbalOptions;
 }
 
 export class LiveSession {
@@ -53,7 +53,7 @@ export class LiveSession {
   private lastStrokeRate: number | null = null;
   private offs: Unsubscribe[] = [];
   private readonly avgN: number;
-  private readonly skiba: SkibaConstants;
+  private readonly wbalOptions: WbalOptions;
 
   constructor(
     private readonly source: DataSource,
@@ -66,7 +66,7 @@ export class LiveSession {
     this.signature = opts.signature;
     this.wbal = opts.signature?.wPrime ?? null;
     this.avgN = opts.powerAvgStrokes ?? POWER_AVG_STROKES;
-    this.skiba = opts.skiba ?? SKIBA;
+    this.wbalOptions = opts.wbal ?? DEFAULT_WBAL;
   }
 
   /** Starts the countdown and recording (t = 0 when the countdown ends). */
@@ -80,6 +80,7 @@ export class LiveSession {
       timeline: this.opts.timeline,
       signature: this.opts.signature,
       startTs: zero,
+      wbal: this.wbalOptions,
     });
     this.offs = [
       this.source.onStroke((s) => {
@@ -112,7 +113,7 @@ export class LiveSession {
         this.maxCount += 1;
       }
       if (!sig || this.wbal === null) return;
-      this.wbal = wbalStep(this.wbal, p, sig, 1, this.skiba);
+      this.wbal = wbalStep(this.wbal, p, sig, 1, this.wbalOptions);
       if (!this.minWbal || this.wbal < this.minWbal.value) this.minWbal = { value: this.wbal, t: n };
       this.mpaSeries.push({ t: n, value: mpa(this.wbal, sig) });
     });

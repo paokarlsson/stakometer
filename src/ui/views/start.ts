@@ -5,6 +5,10 @@ import { Simulator, type SimMode } from '../../sources/simulator';
 import { kOf } from '../../model/signature';
 import { BUILTIN_WORKOUTS, TEST_WORKOUTS } from '../../workout/builtin';
 import { expand, totalDuration } from '../../workout/expand';
+import { calibrate } from '../../workout/calibrate';
+import { maxEffortDuration } from '../../workout/schema';
+import { calibrationOptions } from '../../storage/settings';
+import type { FitnessSignature } from '../../model/signature';
 import type { View } from '../app';
 import { debugPanel } from '../debugPanel';
 import { h } from '../dom';
@@ -77,12 +81,35 @@ export const startView: View = (root, app) => {
 
   // Workout choice (spec §8.1): built-in workouts and free ride.
   const signatureText = h('p', { class: 'hint' }, 'Anslut för att se aktiv signatur');
+  // Planned intensity and lowest W′ for the chosen workout (fitted per settings).
+  const planInfo = h('p', { class: 'hint', hidden: true });
+  let signature: FitnessSignature | null = null;
+  const updatePlan = (): void => {
+    const w = app.workout;
+    const sig = signature;
+    planInfo.hidden = !w || !sig || maxEffortDuration(w) !== null;
+    if (!w || !sig || planInfo.hidden) return;
+    const planned = expand(w, sig, app.settings.tolerance);
+    const c = calibrate(planned, sig, calibrationOptions(app.settings));
+    const peak = (t: typeof planned) => Math.max(0, ...t.filter((s) => s.targetW !== null && s.targetW > sig.cp).map((s) => Math.round(s.targetW!)));
+    const pct = (f: number) => `${Math.round(Math.max(0, f) * 100)} %`;
+    if (peak(planned) === 0) planInfo.textContent = 'Passet ligger under CP – W′ förbrukas inte.';
+    else if (c.scale === 1) planInfo.textContent = `Arbete ${peak(c.timeline)} W · beräknat lägsta W′ ${pct(c.minWbal.fraction)}`;
+    else {
+      planInfo.textContent =
+        `Arbete ${peak(c.timeline)} W (justerat från ${peak(planned)} W) · beräknat lägsta W′ ${pct(c.minWbal.fraction)}` +
+        ` (utan justering ${pct(c.before.fraction)})`;
+    }
+  };
   const asChoice = (w: (typeof BUILTIN_WORKOUTS)[number]) => ({ id: w.id, label: w.name, detail: formatDuration(totalDuration(expand(w, null))), workout: w });
   const choices = [{ id: 'free', label: 'Fri åkning', detail: 'ingen tidslinje', workout: null }, ...BUILTIN_WORKOUTS.map(asChoice)];
   const testChoices = TEST_WORKOUTS.map(asChoice);
   const radio = (c: (typeof choices)[number]) => {
     const input = h('input', { type: 'radio', name: 'workout', value: c.id, checked: (app.workout?.id ?? 'free') === c.id });
-    input.addEventListener('change', () => (app.workout = c.workout));
+    input.addEventListener('change', () => {
+      app.workout = c.workout;
+      updatePlan();
+    });
     return h('label', { class: 'choice' }, input, ` ${c.label} `, h('span', { class: 'hint' }, `· ${c.detail}`));
   };
   const workoutList = h(
@@ -95,6 +122,8 @@ export const startView: View = (root, app) => {
   );
   const loadSignature = async (): Promise<void> => {
     const sig = await app.activeSignature();
+    signature = sig;
+    updatePlan();
     const defaults: Record<string, string> = {
       'simulator-default': ' (simulatorns standardvärden)',
       'pm5-default': ' (standardvärden – gör test eller mata in egna)',
@@ -142,7 +171,7 @@ export const startView: View = (root, app) => {
       error,
     ),
     h('section', { class: 'card' }, h('h2', {}, 'Signatur'), signatureText),
-    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, start),
+    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, planInfo, start),
     h(
       'nav',
       { class: 'row' },

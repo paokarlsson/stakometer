@@ -1,8 +1,8 @@
 // Spec §12 step 3: the three tests run in the simulator (fatigue, true signature
 // 550/220/18 000) give a fitted signature with CP within ±3 % and W′ within ±10 %.
 //
-// The outcome is statistical. Measured over 16 seeds (2026-09-24): CP is always
-// within ±2 %, W′ within ±10 % in 11 of 16. With 7 % noise per stroke (§10) and
+// The outcome is statistical. Measured over 16 seeds (2026-09-24, W′ model
+// Skiba 2015): CP is always within ±2 %, W′ within ±10 % in 12 of 16. With 7 % noise per stroke (§10) and
 // three parameters fitted to exactly three points, a few watts on the 30 s or 3 min
 // result move W′ by 10 %. The seed below is fixed so the test is deterministic.
 import { describe, expect, it } from 'vitest';

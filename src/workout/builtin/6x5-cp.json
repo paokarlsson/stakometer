@@ -1,0 +1,13 @@
+{
+  "id": "6x5-cp",
+  "name": "6×5 min",
+  "segments": [
+    {
+      "kind": "interval",
+      "duration": 300,
+      "target": { "pctCP": 100 },
+      "repeat": 6,
+      "rest": { "duration": 60, "target": { "pctCP": 40 } }
+    }
+  ]
+}

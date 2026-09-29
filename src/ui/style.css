@@ -8,11 +8,14 @@
   --warn: #f0a33a;
   --danger: #ef5a5a;
   --yellow: #e5c33a;
-  --chart-bg: #12161c;
-  --chart-grid: #232a34;
-  --chart-band: rgb(76 195 138 / 0.18);
-  --chart-target: rgb(76 195 138 / 0.75);
-  --chart-mpa: #7aa7ff;
+  --chart-bg: #10141a;
+  --chart-future: #161c24;
+  --chart-grid: #262e3a;
+  --chart-band: rgb(76 195 138 / 0.28);
+  --chart-band-edge: rgb(76 195 138 / 0.55);
+  --chart-target: #4cc38a;
+  --chart-mpa: #8fb4ff;
+  --chart-cp: #c9a6ff;
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 18px;
@@ -21,6 +24,11 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Author display rules (grid, flex) must not override the hidden attribute. */
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -485,8 +493,13 @@ details summary {
   background: var(--panel);
 }
 
-/* uPlot legend and axes in the app's theme */
+/* uPlot legend in the app's theme */
 .u-legend {
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 1rem;
+}
+
+.u-legend .u-marker {
+  width: 1.2em;
+  height: 0.35em;
 }

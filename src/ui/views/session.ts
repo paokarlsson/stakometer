@@ -2,6 +2,7 @@
 import { kOf, type FitnessSignature } from '../../model/signature';
 import { analyzeSession } from '../../session/analysis';
 import { summarize } from '../../session/summary';
+import { wbalOptions } from '../../storage/settings';
 import { suggestSignature } from '../../session/testResults';
 import type { Session } from '../../storage/types';
 import { workoutById } from '../../workout/builtin';
@@ -28,9 +29,9 @@ export const sessionView: View = (root, app) => {
       return;
     }
     const chunks = await app.store.getChunks(session.id);
-    const analysis = analyzeSession(session, chunks, app.settings.skiba);
+    const analysis = analyzeSession(session, chunks, wbalOptions(app.settings));
     // Recomputed from raw data, so sessions saved by older versions show every value too.
-    const s = summarize(chunks, session.signatureSnapshot);
+    const s = summarize(chunks, session.signatureSnapshot, wbalOptions(app.settings));
     const title = workoutById(session.workoutId)?.name ?? (session.mode === 'free' ? 'Fri åkning' : 'Pass');
 
     const stat = (label: string, value: string) => h('div', { class: 'metric' }, h('div', { class: 'label' }, label), h('div', { class: 'value small-value' }, value));

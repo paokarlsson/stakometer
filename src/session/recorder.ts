@@ -1,6 +1,7 @@
 import type { Clock } from '../core/clock';
 import type { Unsubscribe } from '../core/events';
 import type { FitnessSignature } from '../model/signature';
+import type { WbalOptions } from '../model/wbal';
 import type { DataSource, Machine } from '../sources/DataSource';
 import type {
   ConnectionEvent,
@@ -32,11 +33,14 @@ export interface StartOptions {
   signature?: FitnessSignature | null;
   /** Clock time of session t = 0; defaults to now. May be in the future (countdown). */
   startTs?: number;
+  /** W′ model for the summary's lowest W′. */
+  wbal?: WbalOptions;
 }
 
 /** Records raw samples from a DataSource into chunks written every CHUNK_INTERVAL_S. */
 export class Recorder {
   private session: Session | null = null;
+  private wbalOptions: WbalOptions | undefined;
   private startTs = 0;
   private lastFlushTs = 0;
   private seq = 0;
@@ -86,6 +90,7 @@ export class Recorder {
       summary: null,
     };
     this.session = session;
+    this.wbalOptions = opts.wbal;
     this.startTs = opts.startTs ?? this.clock.now();
     this.lastFlushTs = this.clock.now();
     this.seq = 0;
@@ -147,7 +152,7 @@ export class Recorder {
     this.unsubscribe = [];
     await this.flush();
     this.session = null;
-    const done: Session = { ...session, status, summary: summarize(await this.store.getChunks(session.id), session.signatureSnapshot) };
+    const done: Session = { ...session, status, summary: summarize(await this.store.getChunks(session.id), session.signatureSnapshot, this.wbalOptions) };
     await this.store.putSession(done);
     return done;
   }

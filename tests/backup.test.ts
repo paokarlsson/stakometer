@@ -31,7 +31,7 @@ describe('backup (§11)', () => {
     const target = new MemoryDb();
     const counts = await importBackup(target, parseBackup(json));
 
-    expect(counts).toEqual({ sessions: 2, chunks: 2, signatures: 1, testResults: 1, settings: 5 });
+    expect(counts).toEqual({ sessions: 2, chunks: 2, signatures: 1, testResults: 1, settings: settingsToRecords(DEFAULT_SETTINGS).length });
     for (const name of STORE_NAMES) expect(await target.readAll(name)).toEqual(await source.readAll(name));
   });
 

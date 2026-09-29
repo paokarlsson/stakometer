@@ -1,0 +1,13 @@
+{
+  "id": "2x15-threshold",
+  "name": "2×15 min",
+  "segments": [
+    {
+      "kind": "interval",
+      "duration": 900,
+      "target": { "pctCP": 95 },
+      "repeat": 2,
+      "rest": { "duration": 180, "target": { "pctCP": 40 } }
+    }
+  ]
+}

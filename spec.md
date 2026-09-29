@@ -237,16 +237,25 @@ Tillståndet `wbal` (J) startar på W′. För varje sekund med effekten p (Δt 
 
 ```
 om p > CP:   wbal = wbal − (p − CP) · Δt
-annars:      D   = CP − p
-             τ   = 546 · e^(−0,01 · D) + 316
+annars:      D    = CP − p
+             τ    = enligt vald modell (nedan)
              wbal = W′ − (W′ − wbal) · e^(−Δt / τ)
 ```
 
+**Återhämtningsmodell** (användarens beslut 2026-09-24, valbar under Inställningar → Avancerat):
+
+| Modell | τ | Kommentar |
+|---|---|---|
+| **Skiba 2015** (standard) | `W′ / D` | Differentiell modell. Inga konstanter från cykling, skalar med användarens egen W′. |
+| Skiba 2012 | `546 · e^(−0,01 · D) + 316` | Den ursprungliga formeln i spec:en. Konstanterna kommer från cykling och är konfigurerbara. τ ≥ 316 s gör återhämtningen mycket långsam: från 50 % till 90 % tar det cirka 11 min vid vila med CP 180 och W′ 10 000. |
+| Bartram 2018 | `2287,2 · D^(−0,688)` | Anpassad till elitcyklister. |
+
+Förbrukningen över CP är densamma i alla modeller. Med Skiba 2015 och Bartram 2018 blir τ oändligt vid D = 0, så det sker ingen återhämtning exakt på CP.
+
 - **Negativt värde:** `wbal` får bli negativ. Den lagras som den är, men visas som 0 % med markeringen "över modellen". Hantering av breakthroughs kommer i v2.
-- **Konstanter:** 546, 0,01 och 316 kommer från cykling (Skiba 2012) och ska ligga som konfigurerbara konstanter.
 - **Tid till tomt** vid aktuell effekt p > CP: `max(wbal, 0) / (p − CP)`.
 
-**Referenstester** (verifierade numeriskt):
+**Referenstester för Skiba 2012** (verifierade numeriskt):
 
 | Scenario | Förväntat |
 |---|---|
@@ -254,6 +263,8 @@ annars:      D   = CP − p
 | CP 250, p = 200 W | τ ≈ 647,2 s |
 | W′ 20 000 J, CP 250: 60 s på 350 W | wbal = 14 000 J |
 | …följt av 60 s på 0 W | wbal ≈ 14 919 J |
+
+**Referenstest för Skiba 2015:** samma scenario ger 14 000 J och sedan 20 000 − 6 000 · e^(−0,75) ≈ 17 166 J.
 
 ### 5.6 MPA (maximal tillgänglig effekt)
 
@@ -318,7 +329,7 @@ interface TimelineSegment {
 
 ### 6.3 WorkoutRunner
 
-- **Tillstånd:** `idle → countdown (5 s) → running ⇄ paused → finished`.
+- **Tillstånd:** `idle → countdown (10 s) → running ⇄ paused → finished`. Nedräkningen är 10 s (användarens beslut 2026-09-24), med pip under de tre sista sekunderna.
 - **Tidslinjen** följer klockan, inte prestationen.
 - **Paus:** Tidslinjen fryses. Datainspelningen fortsätter och markeras som pausad. W′-balansen fortsätter att räknas med effekten från resamplern, så att återhämtningen under pausen blir korrekt.
 - **Avbrott:** Om användaren stoppar i förtid sparas passet med status `aborted`.
@@ -326,12 +337,33 @@ interface TimelineSegment {
 
 ### 6.4 Inbyggda pass
 
-1. **4×4 min tröskel:** exemplet i §6.1.
-2. **8×1 min hårt:** 10 min uppvärmning på 60 % CP, sedan 8 × (1 min på 130 % CP / 1 min på 40 % CP), sist 5 min nedvarvning på 50 % CP.
+Träningspassen har ingen uppvärmning eller nedvarvning (användarens beslut 2026-09-24). Värm upp med fri åkning före passet. Testpassen i §7 behåller sina.
+
+1. **4×4 min tröskel:** 4 × 4 min på 105 % CP med 2 min vila på 40 % CP (exemplet i §6.1 utan uppvärmning och nedvarvning).
+2. **8×1 min hårt:** 8 × (1 min på 130 % CP / 1 min på 40 % CP).
 3. **30 min jämnt:** 30 min på 75 % CP.
-4. **Fri åkning:** Ett eget läge utan tidslinje. Livevyn visar effekt, MPA och W′-batteri men inget målband. Passet pågår tills användaren stoppar.
+4. **2×15 min:** 2 × 15 min på 95 % CP med 3 min vila på 40 % CP.
+5. **6×5 min:** 6 × 5 min på 100 % CP med 1 min vila på 40 % CP.
+6. **10×3 min:** 10 × 3 min på 105 % CP med 1 min vila på 40 % CP.
+7. **3×10 min 40/20:** tre block med 10 × (40 s på 120 % CP / 20 s på 40 % CP) och 3 min vila på 40 % CP mellan blocken. Formatet saknar nästlade upprepningar, så blocken står var för sig och heter "Block 1 · 3/10" osv. Intensiteter och vilor i pass 4–7 är [FÖRSLAG].
+8. **Fri åkning:** Ett eget läge utan tidslinje. Livevyn visar effekt, MPA och W′-batteri men inget målband. Passet pågår tills användaren stoppar.
 
 Testpassen beskrivs i §7.
+
+### 6.5 Anpassning till W′ (användarens beslut 2026-09-24)
+
+Ett pass anpassas till användarens signatur så att den **planerade** W′-balansen inte går under en inställbar lägsta nivå (§8.5, standard 30 %, gränsen till röd zon i §5.7).
+
+- **Planen:** Passet simuleras sekund för sekund med målen och vald W′-modell (§5.5). Ett segment utan mål räknas som 0 W.
+- **Vad som justeras:** bara arbete över CP, och bara överskottet: `mål = CP + s · (mål − CP)`. Vilor, arbete på eller under CP och testpass (§7) rörs inte. Målen avrundas till hela watt, och bandet behåller sin relativa bredd. Målen höjs aldrig över PP.
+- **Lägen:** `fit` (standard) söker det största s där planerad lägsta W′ ≥ lägsta nivån, så passet landar på nivån, antingen sänkt eller höjt. `lower` sänker bara om passet annars skulle gå under. `off` använder målen som de står.
+- **Begränsning:** Planen förutsätter att målet hålls exakt. Drag över målet och ryckiga drag (§13) drar mer W′ än planen räknar med.
+- Startsidan visar justerat arbetsmål och beräknad lägsta W′ för det valda passet.
+- Planen räknar med ramperna i §6.6.
+
+### 6.6 Ramper runt intervaller (användarens beslut 2026-09-24)
+
+Under de 5 s före en intervall och de 5 s efter den går mål och band linjärt mellan grannsegmentets mål och intervallens. Rampen ligger i grannsegmentet (oftast vilan), så intervallen behåller sitt fulla mål hela tiden. Om grannsegmentet är kortare än två ramper får varje ramp halva längden. Det blir ingen ramp mot passets början eller slut, mellan två intervaller eller där något av segmenten saknar mål. Ramperna gäller livevyn, simulatorns mål, andelen tid inom bandet (§8.3) och W′-planen (§6.5). De räknas fram ur tidslinjen och sparas inte.
 
 ---
 
@@ -413,7 +445,8 @@ En lista med datum, pass, tid, distans, medeleffekt och lägsta W′-procent. Et
 
 - Signatur (manuell inmatning enligt §7.4)
 - Standardtolerans för målband och antal drag i effektmedlet
-- Gränser för W′-zonerna, samt Skiba-konstanterna under "Avancerat"
+- Anpassning av passen till W′ (§6.5): läge och lägsta W′
+- Gränser för W′-zonerna, W′-modellen (§5.5) och Skiba 2012-konstanterna under "Avancerat"
 - Maskintyp: automatisk eller manuellt val (standard SkiErg)
 - Debugläge som loggar rå PM5-data (finns tills vidare som panelen "Felsökning" på startsidan)
 - Export och import av hela databasen som JSON
@@ -559,7 +592,7 @@ Om steg 0 inte kan göras direkt får agenten fortsätta med steg 1 mot simulato
 
 ### Steg 3 – Test och signatur
 
-**Kommentar till första kriteriet:** Utfallet är statistiskt. Mätt över 16 slumpfrön (2026-09-24) ligger CP alltid inom ±2 %, men W′ ligger inom ±10 % i bara 11 av 16. Med 7 % brus per drag (§10) och tre parametrar anpassade till exakt tre punkter flyttar några watt i 30 s- eller 3 min-resultatet W′ med 10 %. `tests/step3-acceptance.test.ts` kör kedjan med fasta frön.
+**Kommentar till första kriteriet:** Utfallet är statistiskt. Mätt över 16 slumpfrön (2026-09-24, W′-modell Skiba 2015) ligger CP alltid inom ±2 %, men W′ ligger inom ±10 % i bara 12 av 16. Med 7 % brus per drag (§10) och tre parametrar anpassade till exakt tre punkter flyttar några watt i 30 s- eller 3 min-resultatet W′ med 10 %. `tests/step3-acceptance.test.ts` kör kedjan med fasta frön.
 
 - **Bygg:** Manuell signatur, de tre testpassen och testläget (§7), `fit3p` med tester (§5.3), flödet för att godkänna en ny signatur, resultatvyn, vyn efter passet (§8.3) och JSON-backup.
 - **Klart när:**
@@ -572,7 +605,7 @@ Om steg 0 inte kan göras direkt får agenten fortsätta med steg 1 mot simulato
 
 ## 13. Kända risker och öppna frågor
 
-- **Skiba-konstanterna** kommer från cykling och kan skilja sig för stakning. De är konfigurerbara, och kalibrering sker i v2.
+- **W′-återhämtningen** är inte kalibrerad för stakning. Standardmodellen är Skiba 2015 (§5.5), och kalibrering sker i v2.
 - **Toleransbandet** på ±5 % är en gissning. Justera efter riktig data.
 - **Effekten per drag** på SkiErg är ryckig. Medel över 3 drag är ett startvärde.
 - **Maskintyp:** över Bluetooth läses den från `0016` (SkiErg = 128). Över USB finns den inte, så där gäller det manuella valet (§9).

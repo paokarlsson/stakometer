@@ -9,7 +9,7 @@ import { UsbPm5Source } from '../sources/pm5/usb';
 import { RawLog } from '../sources/rawlog';
 import type { Simulator } from '../sources/simulator';
 import type { IdbStore } from '../storage/db';
-import { DEFAULT_SETTINGS, settingsFromRecords, settingsToRecords, type Settings } from '../storage/settings';
+import { DEFAULT_SETTINGS, settingsFromRecords, settingsToRecords, wbalOptions, type Settings } from '../storage/settings';
 import type { Session, TestResult } from '../storage/types';
 import type { Workout } from '../workout/schema';
 import { Beeper } from './audio';
@@ -100,7 +100,7 @@ export class App {
   /** After a session: stores the test result of a completed test (spec §7.3). */
   async completeSession(session: Session): Promise<TestResult | null> {
     if (session.mode !== 'test') return null;
-    const analysis = analyzeSession(session, await this.store.getChunks(session.id), this.settings.skiba);
+    const analysis = analyzeSession(session, await this.store.getChunks(session.id), wbalOptions(this.settings));
     const result = testResultFrom(session, analysis);
     if (result) await this.store.putTestResult(result);
     return result;

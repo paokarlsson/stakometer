@@ -1,0 +1,32 @@
+{
+  "id": "3x10-40-20",
+  "name": "3×10 min 40/20",
+  "segments": [
+    {
+      "kind": "interval",
+      "label": "Block 1",
+      "duration": 40,
+      "target": { "pctCP": 120 },
+      "repeat": 10,
+      "rest": { "duration": 20, "target": { "pctCP": 40 } }
+    },
+    { "kind": "rest", "duration": 180, "target": { "pctCP": 40 } },
+    {
+      "kind": "interval",
+      "label": "Block 2",
+      "duration": 40,
+      "target": { "pctCP": 120 },
+      "repeat": 10,
+      "rest": { "duration": 20, "target": { "pctCP": 40 } }
+    },
+    { "kind": "rest", "duration": 180, "target": { "pctCP": 40 } },
+    {
+      "kind": "interval",
+      "label": "Block 3",
+      "duration": 40,
+      "target": { "pctCP": 120 },
+      "repeat": 10,
+      "rest": { "duration": 20, "target": { "pctCP": 40 } }
+    }
+  ]
+}

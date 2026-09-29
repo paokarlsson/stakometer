@@ -1,0 +1,13 @@
+{
+  "id": "10x3-hard",
+  "name": "10×3 min",
+  "segments": [
+    {
+      "kind": "interval",
+      "duration": 180,
+      "target": { "pctCP": 105 },
+      "repeat": 10,
+      "rest": { "duration": 60, "target": { "pctCP": 40 } }
+    }
+  ]
+}

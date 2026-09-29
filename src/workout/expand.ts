@@ -41,7 +41,9 @@ export function expand(workout: Workout, signature: Pick<SignatureParams, 'cp'> 
     const reps = seg.repeat ?? 1;
     const label = seg.label ?? KIND_LABEL[seg.kind] ?? seg.kind;
     for (let i = 1; i <= reps; i++) {
-      add(seg.kind, reps > 1 ? `${label} ${i}/${reps}` : label, seg.duration, seg.target, tol(seg, defaultTolerance));
+      // "Intervall 2/4", or with a custom label "Block 1 · 2/10"
+      const repLabel = reps === 1 ? label : seg.label ? `${label} · ${i}/${reps}` : `${label} ${i}/${reps}`;
+      add(seg.kind, repLabel, seg.duration, seg.target, tol(seg, defaultTolerance));
       if (seg.rest && i < reps) {
         add('rest', KIND_LABEL.rest!, seg.rest.duration, seg.rest.target, seg.rest.tolerance ?? defaultTolerance);
       }

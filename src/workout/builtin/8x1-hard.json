@@ -2,14 +2,12 @@
   "id": "8x1-hard",
   "name": "8×1 min hårt",
   "segments": [
-    { "kind": "warmup", "duration": 600, "target": { "pctCP": 60 } },
     {
       "kind": "interval",
       "duration": 60,
       "target": { "pctCP": 130 },
       "repeat": 8,
       "rest": { "duration": 60, "target": { "pctCP": 40 } }
-    },
-    { "kind": "cooldown", "duration": 300, "target": { "pctCP": 50 } }
+    }
   ]
 }

@@ -3,10 +3,24 @@
 import { defaultPm5Signature, kOf, validateSignature, type FitnessSignature } from '../../model/signature';
 import type { Machine } from '../../sources/DataSource';
 import { exportBackup, importBackup, parseBackup } from '../../storage/backup';
+import type { WbalModel } from '../../model/wbal';
+import type { CalibrationMode } from '../../workout/calibrate';
 import { validateSettings, type Settings } from '../../storage/settings';
 import type { View } from '../app';
 import { h } from '../dom';
 import { formatDate } from '../format';
+
+const MODEL_LABEL: Record<WbalModel, string> = {
+  skiba2015: 'Skiba 2015 – τ = W′ / (CP − P) (standard)',
+  skiba2012: 'Skiba 2012 – konstanter från cykling (långsam)',
+  bartram2018: 'Bartram 2018 – τ = 2287 · (CP − P)^−0,688',
+};
+
+const CALIBRATION_LABEL: Record<CalibrationMode, string> = {
+  fit: 'Landa på lägsta W′ (sänk eller höj)',
+  lower: 'Sänk bara om W′ skulle gå under',
+  off: 'Av – passens mål som de står',
+};
 
 const MACHINE_LABEL: Record<Settings['machine'], string> = {
   auto: 'Automatisk (standard SkiErg)',
@@ -68,9 +82,20 @@ export const settingsView: View = (root, app) => {
     {},
     ...(Object.keys(MACHINE_LABEL) as Settings['machine'][]).map((m) => h('option', { value: m, selected: m === s.machine }, MACHINE_LABEL[m])),
   );
+  const calibrationSelect = h(
+    'select',
+    {},
+    ...(Object.keys(CALIBRATION_LABEL) as CalibrationMode[]).map((m) => h('option', { value: m, selected: m === s.calibration }, CALIBRATION_LABEL[m])),
+  );
+  const minWbal = numberInput(s.minWbal * 100, '1');
   const green = numberInput(s.zones.green * 100, '1');
   const yellow = numberInput(s.zones.yellow * 100, '1');
   const orange = numberInput(s.zones.orange * 100, '1');
+  const modelSelect = h(
+    'select',
+    {},
+    ...(Object.keys(MODEL_LABEL) as WbalModel[]).map((m) => h('option', { value: m, selected: m === s.wbalModel }, MODEL_LABEL[m])),
+  );
   const skibaA = numberInput(s.skiba.a);
   const skibaB = numberInput(s.skiba.b, '0.001');
   const skibaC = numberInput(s.skiba.c);
@@ -82,7 +107,10 @@ export const settingsView: View = (root, app) => {
       tolerance: Number(tolerance.value) / 100,
       powerAvgStrokes: Number(avgStrokes.value),
       machine: machineSelect.value as Settings['machine'],
+      calibration: calibrationSelect.value as CalibrationMode,
+      minWbal: Number(minWbal.value) / 100,
       zones: { green: Number(green.value) / 100, yellow: Number(yellow.value) / 100, orange: Number(orange.value) / 100 },
+      wbalModel: modelSelect.value as WbalModel,
       skiba: { a: Number(skibaA.value), b: Number(skibaB.value), c: Number(skibaC.value) },
     };
     const err = validateSettings(next);
@@ -144,13 +172,17 @@ export const settingsView: View = (root, app) => {
         field('Drag i effektmedlet', avgStrokes),
         field('Maskintyp', machineSelect),
       ),
+      h('p', { class: 'hint small' }, 'Passens intensitet räknas mot din signatur så att den beräknade W′-balansen inte går under lägsta W′. Bara arbete över CP justeras; vilor och testpass rörs inte.'),
+      h('div', { class: 'fields' }, field('Anpassa passen', calibrationSelect), field('Lägsta W′', minWbal, '%')),
       h(
         'details',
         {},
         h('summary', {}, 'Avancerat'),
         h('p', { class: 'hint small' }, 'W′-zoner: nedre gräns i procent av W′ för grön, gul och orange. Under orange är rött.'),
         h('div', { class: 'fields' }, field('Grön från', green, '%'), field('Gul från', yellow, '%'), field('Orange från', orange, '%')),
-        h('p', { class: 'hint small' }, 'Skiba-konstanter för återhämtning: τ = a · e^(−b · D) + c. Standard 546, 0,01, 316 (från cykling).'),
+        h('p', { class: 'hint small' }, 'W′-återhämtning under CP. Förbrukningen över CP är densamma i alla modeller.'),
+        h('div', { class: 'fields' }, field('Modell', modelSelect)),
+        h('p', { class: 'hint small' }, 'Konstanter för Skiba 2012: τ = a · e^(−b · D) + c. Standard 546, 0,01, 316 (från cykling). Används bara med den modellen.'),
         h('div', { class: 'fields' }, field('a', skibaA), field('b', skibaB), field('c', skibaC)),
       ),
       h('div', { class: 'row' }, saveSettings),

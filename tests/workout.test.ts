@@ -7,9 +7,28 @@ import { parseWorkout, usesPctCP } from '../src/workout/schema';
 
 const fourByFour = BUILTIN_WORKOUTS.find((w) => w.id === '4x4-threshold')!;
 
+/** The example in spec §6.1, which the §6.2 reference test is defined on. */
+const specExample = parseWorkout({
+  id: '4x4-threshold',
+  name: '4×4 min tröskel',
+  segments: [
+    { kind: 'warmup', duration: 600, target: { pctCP: 60 } },
+    { kind: 'interval', duration: 240, target: { pctCP: 105 }, repeat: 4, rest: { duration: 120, target: { pctCP: 40 } } },
+    { kind: 'cooldown', duration: 300, target: { pctCP: 50 } },
+  ],
+});
+
 describe('parseWorkout', () => {
   it('accepts the built-in workouts', () => {
-    expect(BUILTIN_WORKOUTS.map((w) => w.id)).toEqual(['4x4-threshold', '8x1-hard', '30min-steady']);
+    expect(BUILTIN_WORKOUTS.map((w) => w.id)).toEqual([
+      '4x4-threshold',
+      '8x1-hard',
+      '30min-steady',
+      '2x15-threshold',
+      '6x5-cp',
+      '10x3-hard',
+      '3x10-40-20',
+    ]);
     expect(BUILTIN_WORKOUTS.every(usesPctCP)).toBe(true);
   });
 
@@ -23,7 +42,7 @@ describe('parseWorkout', () => {
 });
 
 describe('expand (§6.2 reference test)', () => {
-  const timeline = expand(fourByFour, { cp: 200 });
+  const timeline = expand(specExample, { cp: 200 });
 
   it('gives 9 segments and 2 220 s', () => {
     expect(timeline).toHaveLength(9);
@@ -45,7 +64,7 @@ describe('expand (§6.2 reference test)', () => {
   });
 
   it('drops %CP targets without a signature and keeps watt and max targets', () => {
-    const noSig = expand(fourByFour, null);
+    const noSig = expand(specExample, null);
     expect(noSig.every((s) => s.targetW === null && s.lo === null)).toBe(true);
     const custom = expand(
       parseWorkout({ id: 'c', name: 'C', segments: [{ kind: 'steady', duration: 60, target: { watt: 250 }, tolerance: 0.1 }, { kind: 'test', duration: 30, target: { max: true } }] }),
@@ -64,11 +83,37 @@ describe('expand (§6.2 reference test)', () => {
   });
 });
 
+describe('added standard workouts', () => {
+  const byId = (id: string) => expand(BUILTIN_WORKOUTS.find((w) => w.id === id)!, { cp: 200 });
+
+  it('have no warm-up or cool-down, and the expected lengths', () => {
+    for (const w of BUILTIN_WORKOUTS) expect(w.segments.some((s) => s.kind === 'warmup' || s.kind === 'cooldown'), w.id).toBe(false);
+    expect(totalDuration(byId('4x4-threshold'))).toBe(4 * 240 + 3 * 120);
+    expect(totalDuration(byId('8x1-hard'))).toBe(8 * 60 + 7 * 60);
+    expect(totalDuration(byId('2x15-threshold'))).toBe(900 + 180 + 900);
+    expect(totalDuration(byId('6x5-cp'))).toBe(6 * 300 + 5 * 60);
+    expect(totalDuration(byId('10x3-hard'))).toBe(10 * 180 + 9 * 60);
+    expect(byId('10x3-hard').filter((s) => s.kind === 'interval')).toHaveLength(10);
+  });
+
+  it('3×10 min 40/20: three blocks of 10 × 40 s with 20 s between, 3 min between blocks', () => {
+    const t = byId('3x10-40-20');
+    const hard = t.filter((s) => s.kind === 'interval');
+    expect(hard).toHaveLength(30);
+    expect(hard.every((s) => s.end - s.start === 40 && s.targetW === 240)).toBe(true);
+    expect(hard[0]!.label).toBe('Block 1 · 1/10');
+    expect(hard[29]!.label).toBe('Block 3 · 10/10');
+    expect(t.filter((s) => s.kind === 'rest' && s.end - s.start === 20)).toHaveLength(27);
+    expect(t.filter((s) => s.kind === 'rest' && s.end - s.start === 180)).toHaveLength(2);
+    expect(totalDuration(t)).toBe(3 * 580 + 2 * 180);
+  });
+});
+
 describe('WorkoutRunner (§6.3)', () => {
-  const setup = (timeline = expand(fourByFour, { cp: 200 })) => {
+  const setup = (timeline = expand(specExample, { cp: 200 })) => {
     let real = 0;
     const clock = new SimClock(1, () => real);
-    const runner = new WorkoutRunner(timeline, clock);
+    const runner = new WorkoutRunner(timeline, clock, 5); // these tests use a 5 s countdown
     const states: string[] = [];
     runner.stateChanged.on((s) => states.push(s));
     const at = (t: number) => {
@@ -78,7 +123,19 @@ describe('WorkoutRunner (§6.3)', () => {
     return { runner, states, at };
   };
 
-  it('counts down 5 s, then runs the timeline with the clock', () => {
+  it('counts down 10 s by default', () => {
+    let real = 0;
+    const runner = new WorkoutRunner(expand(specExample, { cp: 200 }), new SimClock(1, () => real));
+    runner.start();
+    real = 9.9;
+    runner.update();
+    expect(runner.state).toBe('countdown');
+    real = 10;
+    runner.update();
+    expect(runner.state).toBe('running');
+  });
+
+  it('counts down, then runs the timeline with the clock', () => {
     const { runner, states, at } = setup();
     runner.start();
     at(4.9);
@@ -90,6 +147,13 @@ describe('WorkoutRunner (§6.3)', () => {
     expect(runner.timelineTime()).toBeCloseTo(700);
     expect(runner.current()).toMatchObject({ index: 1, remaining: expect.closeTo(140, 6), next: { kind: 'rest' } });
     expect(runner.target()).toBeCloseTo(210);
+  });
+
+  it('gives the simulator the ramped target', () => {
+    const { runner, at } = setup(expand(fourByFour, { cp: 200 })); // 4×4 without warm-up
+    runner.start();
+    at(5 + 242.5); // 2.5 s into the rest after the first interval
+    expect(runner.target()).toBeCloseTo(145);
   });
 
   it('freezes the timeline while paused but not session time', () => {

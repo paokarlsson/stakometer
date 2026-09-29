@@ -5,7 +5,7 @@ import { powerAt } from '../model/morton3p';
 import type { SignatureParams } from '../model/signature';
 import type { SessionAnalysis } from '../session/analysis';
 import type { Session } from '../storage/types';
-import type { TimelineSegment } from '../workout/schema';
+import { targetAt } from '../workout/ramp';
 import { formatDuration } from './format';
 
 const css = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -21,46 +21,49 @@ function mount(el: HTMLElement, make: (width: number) => uPlot): () => void {
   };
 }
 
+const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
 const axisStyle = (): Partial<uPlot.Axis> => ({
   stroke: css('--muted'),
-  grid: { stroke: css('--line'), width: 1 },
-  ticks: { stroke: css('--line'), width: 1 },
+  font: `15px ${FONT}`,
+  labelFont: `600 15px ${FONT}`,
+  grid: { stroke: css('--chart-grid'), width: 1 },
+  ticks: { stroke: css('--chart-grid'), width: 1 },
 });
 
 /** Whole session: target band, power at 1 Hz and W′ balance on a right axis (spec §8.3). */
 export function sessionChart(el: HTMLElement, session: Session, a: SessionAnalysis): () => void {
   const n = a.power.length;
   const x = Array.from({ length: n }, (_, i) => i + 1);
-  const segAt = (i: number): TimelineSegment | null => {
+  // Band and target at each second, ramps included.
+  const points = x.map((_, i) => {
     const tl = a.timeline[i];
-    if (tl === null || tl === undefined || !session.timeline) return null;
-    return session.timeline.find((s) => tl >= s.start && tl < s.end) ?? null;
-  };
-  const segs = x.map((_, i) => segAt(i));
-  const lo = segs.map((s) => s?.lo ?? null);
-  const hi = segs.map((s) => s?.hi ?? null);
-  const target = segs.map((s) => s?.targetW ?? null);
+    return tl === null || tl === undefined || !session.timeline ? null : targetAt(session.timeline, tl);
+  });
+  const lo = points.map((p) => p?.lo ?? null);
+  const hi = points.map((p) => p?.hi ?? null);
+  const target = points.map((p) => p?.targetW ?? null);
   const wPrime = session.signatureSnapshot?.wPrime;
   const wbalPct = a.wbal && wPrime ? a.wbal.map((w) => (w / wPrime) * 100) : x.map(() => null);
 
   return mount(el, (width) => {
     const opts: uPlot.Options = {
       width,
-      height: 320,
+      height: 380,
       cursor: { drag: { x: true, y: false } },
       scales: { x: { time: false }, pct: { range: [Math.min(0, ...wbalPct.map((v) => v ?? 0)), 100] } },
       axes: [
         { ...axisStyle(), values: (_u, vals) => vals.map((v) => formatDuration(v)) },
-        { ...axisStyle(), label: 'W', size: 56 },
-        { ...axisStyle(), scale: 'pct', side: 1, label: 'W′ %', grid: { show: false }, size: 56 },
+        { ...axisStyle(), label: 'W', size: 64 },
+        { ...axisStyle(), scale: 'pct', side: 1, label: 'W′ %', grid: { show: false }, size: 64 },
       ],
       series: [
         { label: 'Tid', value: (_u, v) => (v === null ? '–' : formatDuration(v)) },
-        { label: 'Band, nedre', stroke: 'transparent', points: { show: false } },
-        { label: 'Band, övre', stroke: 'transparent', points: { show: false } },
-        { label: 'Mål', stroke: css('--chart-target'), width: 2, points: { show: false } },
-        { label: 'Effekt', stroke: css('--text'), width: 1.5, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
-        { label: 'W′', scale: 'pct', stroke: css('--chart-mpa'), width: 2, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} %`) },
+        { label: 'Band, nedre', stroke: css('--chart-band-edge'), width: 1, points: { show: false } },
+        { label: 'Band, övre', stroke: css('--chart-band-edge'), width: 1, points: { show: false } },
+        { label: 'Mål', stroke: css('--chart-target'), width: 2.5, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
+        { label: 'Effekt', stroke: css('--text'), width: 2, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
+        { label: 'W′', scale: 'pct', stroke: css('--chart-mpa'), width: 3, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} %`) },
       ],
       bands: [{ series: [2, 1], fill: css('--chart-band') }],
     };
@@ -81,29 +84,29 @@ export function signatureChart(el: HTMLElement, points: readonly { t: number; p:
   return mount(el, (width) => {
     const series: uPlot.Series[] = [
       { label: 'Tid', value: (_u, v) => (v === null ? '–' : formatDuration(v)) },
-      { label: 'Ny kurva', stroke: css('--accent'), width: 2.5, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
+      { label: 'Ny kurva', stroke: css('--accent'), width: 3.5, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
       {
         label: 'Testresultat',
         stroke: css('--text'),
         fill: css('--text'),
         paths: () => null,
-        points: { show: true, size: 11, stroke: css('--text'), fill: css('--text') },
+        points: { show: true, size: 14, stroke: css('--text'), fill: css('--text') },
         value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`),
       },
     ];
     const data: uPlot.AlignedData = [x, x.map((t) => powerAt(t, fitted)), measured];
     if (previous) {
-      series.push({ label: 'Tidigare', stroke: css('--muted'), width: 2, dash: [8, 6], points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) });
+      series.push({ label: 'Tidigare', stroke: css('--muted'), width: 2.5, dash: [8, 6], points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) });
       data.push(x.map((t) => powerAt(t, previous)));
     }
     return new uPlot(
       {
         width,
-        height: 300,
+        height: 340,
         scales: { x: { time: false, distr: 3 } },
         axes: [
           { ...axisStyle(), splits: () => ticks, values: (_u, vals) => vals.map((v) => formatDuration(v)) },
-          { ...axisStyle(), label: 'W', size: 56 },
+          { ...axisStyle(), label: 'W', size: 64 },
         ],
         series,
       },

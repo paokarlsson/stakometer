@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SimClock } from '../src/core/clock';
 import { Emitter } from '../src/core/events';
 import { LiveSession } from '../src/session/live';
+import { COUNTDOWN_S } from '../src/workout/runner';
 import type { ConnectionState, DataSource, StatusSample, StrokeSample } from '../src/sources/DataSource';
 import { simulatorSignature } from '../src/model/signature';
 import { expand } from '../src/workout/expand';
@@ -32,7 +33,7 @@ async function setup(timeline = expand(BUILTIN_WORKOUTS[0]!, { cp: 200 })) {
   /** Strokes of `power` once per second from session time `from` to `to`, ticking every 0.25 s. */
   const ride = (from: number, to: number, power: number) => {
     for (let t = from; t < to; t += 0.25) {
-      real = t + 5; // 5 s countdown
+      real = t + COUNTDOWN_S;
       if (Number.isInteger(t)) source.strokes.emit({ ts: clock.now(), pmElapsed: t, power, strokeRate: 36, strokeCount: ++n, distance: 0 });
       live.tick();
     }

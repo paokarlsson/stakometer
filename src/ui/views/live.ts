@@ -4,6 +4,8 @@ import { LiveSession } from '../../session/live';
 import { MANUAL_STEP_W } from '../../sources/simulator';
 import { expand, highestTarget } from '../../workout/expand';
 import { maxEffortDuration } from '../../workout/schema';
+import { calibrationOptions, wbalOptions } from '../../storage/settings';
+import { calibrate } from '../../workout/calibrate';
 import { beepsDue } from '../../workout/runner';
 import type { View } from '../app';
 import { h } from '../dom';
@@ -86,6 +88,7 @@ export const liveView: View = (root, app) => {
   let frame = 0;
   let stopping = false;
   let prevRemaining: number | null = null;
+  let prevCountdown: number | null = null;
   let prevIndex = -1;
   let wakeLock: WakeLockSentinel | null = null;
 
@@ -115,6 +118,11 @@ export const liveView: View = (root, app) => {
     const t = l.sessionTime();
     countdown.hidden = runner.state !== 'countdown';
     countdown.textContent = String(Math.ceil(-t));
+    // Beeps in the last three seconds before the start, like before a segment change.
+    if (runner.state === 'countdown') {
+      if (prevCountdown !== null && beepsDue(prevCountdown, -t) > 0) app.beeper.beep();
+      prevCountdown = -t;
+    }
     const inMax = runner.state !== 'finished' && runner.current()?.segment.isMax === true;
     maxOverlay.hidden = !inMax;
     if (inMax) {
@@ -234,12 +242,14 @@ export const liveView: View = (root, app) => {
 
   void (async () => {
     const signature = await app.activeSignature();
-    const timeline = workout ? expand(workout, signature, settings.tolerance) : null;
+    let timeline = workout ? expand(workout, signature, settings.tolerance) : null;
+    // Fit the intensity so the planned W′ lands on the minimum in settings (not for tests).
+    if (timeline && signature && !isTest) timeline = calibrate(timeline, signature, calibrationOptions(settings)).timeline;
     live = new LiveSession(source, clock, app.store, {
       mode: isTest ? 'test' : workout ? 'workout' : 'free',
       machine: app.machine(),
       powerAvgStrokes: settings.powerAvgStrokes,
-      skiba: settings.skiba,
+      wbal: wbalOptions(settings),
       ...(workout && { workoutId: workout.id }),
       timeline,
       signature,
