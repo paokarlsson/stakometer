@@ -45,22 +45,22 @@ En webbapp för Concept2 SkiErg med PM5-monitor som:
 
 ### 2.2 Utanför scope – bygg inte
 
-**Planeras till v2** (kräver data från v1 eller formler som inte är klara):
+Arbetet efter v1 står i [`plan.md`](plan.md) (beslut 2026-09-29). Där står också gränsen mot elitledet, som är coachen.
 
-- Signaturen över tid (breakthrough-detektering och decay)
-- Low/High/Peak Load
-- Separat pulsband samt HRR30/HRR60-analys
-- Form Check och träningsrekommendationer
-- Gamification (Vasaloppet som kampanjkarta, Monster Masters)
-- FIT-export och import från Concept2 Logbook
-- PWA och offline-läge
-- Passeditor i gränssnittet
+**Planeras efter v1** (se `plan.md` §6 och §7):
+
+- Breakthroughs inom ett pass
+- Separat pulsband
 - Kraftkurva per drag
+- PWA och offline-läge
+- FIT-export, bara om passen ska till Garmin eller Strava
+
+**Hör till elitledet – bygg inte här:** signaturens nedgång över veckor, Low/High/Peak Load, HRR30/HRR60-analys, Form Check och träningsrekommendationer, import från Concept2 Logbook, passgenerator och maskininlärning, ATL/CTL per energisystem.
+
+**Struket:** gamification och passeditor i gränssnittet (ersätts av import av planerade pass, `plan.md` §4.1).
 
 **Senare eller aldrig:**
 
-- Passgenerator och maskininlärning
-- ATL/CTL per energisystem
 - Stöd för RowErg och BikeErg (datamodellen ska dock klara flera maskintyper, se §5.1)
 - Styrning av PM5 med CSAFE-kommandon, till exempel att programmera pass. Att *läsa* data via USB ingår i v1 (§9.1).
 - Backend, konton och synk
