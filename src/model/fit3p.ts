@@ -14,6 +14,8 @@ export interface Fit {
   k: number;
   pp: number;
   sse: number;
+  /** Measured minus modelled power per point, W, in input order (spec §7.3). */
+  residuals: number[];
 }
 
 export type FitResult = ({ ok: true } & Fit) | { ok: false; error: string };
@@ -39,8 +41,9 @@ export function fitForK(points: readonly EffortPoint[], k: number): Fit | null {
   if (sxx === 0) return null;
   const wPrime = sxy / sxx;
   const cp = my - wPrime * mx;
-  const sse = points.reduce((a, q, i) => a + (q.p - (cp + wPrime * xs[i]!)) ** 2, 0);
-  return { cp, wPrime, k, pp: cp + wPrime / k, sse };
+  const residuals = points.map((q, i) => q.p - (cp + wPrime * xs[i]!));
+  const sse = residuals.reduce((a, r) => a + r * r, 0);
+  return { cp, wPrime, k, pp: cp + wPrime / k, sse, residuals };
 }
 
 export function fit3p(points: readonly EffortPoint[]): FitResult {

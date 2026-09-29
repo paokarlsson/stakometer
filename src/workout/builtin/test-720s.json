@@ -1,6 +1,6 @@
 {
-  "id": "test-600s",
-  "name": "Test 10 min",
+  "id": "test-720s",
+  "name": "Test 12 min",
   "segments": [
     { "kind": "warmup", "duration": 480, "target": { "pctCP": 55 } },
     { "kind": "warmup", "label": "Ökning", "duration": 10, "target": { "pctCP": 120 } },
@@ -8,7 +8,7 @@
     { "kind": "warmup", "label": "Ökning", "duration": 10, "target": { "pctCP": 120 } },
     { "kind": "warmup", "duration": 50, "target": { "pctCP": 55 } },
     { "kind": "rest", "label": "Lätt", "duration": 180, "target": { "pctCP": 40 } },
-    { "kind": "test", "label": "Maxinsats", "duration": 600, "target": { "max": true } },
+    { "kind": "test", "label": "Maxinsats", "duration": 720, "target": { "max": true } },
     { "kind": "cooldown", "duration": 300, "target": { "pctCP": 50 } }
   ]
 }

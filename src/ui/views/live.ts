@@ -1,6 +1,8 @@
 // Live view (spec §8.2): canvas chart (~70 %) and side panel.
 import { wbalZone } from '../../model/wbal';
 import { LiveSession } from '../../session/live';
+import { dragFactorDiffers, previousTest } from '../../session/testResults';
+import type { TestResult } from '../../storage/types';
 import { MANUAL_STEP_W } from '../../sources/simulator';
 import { expand, highestTarget } from '../../workout/expand';
 import { maxEffortDuration } from '../../workout/schema';
@@ -32,6 +34,8 @@ export const liveView: View = (root, app) => {
   const maxOverlay = h('div', { class: 'max-overlay', hidden: true }, h('div', { class: 'max-word' }, 'MAX'), maxLeft, maxAvg);
   const banner = h('p', { class: 'banner', hidden: true }, 'Återansluter till PM5 – passet fortsätter');
   const pausedBanner = h('p', { class: 'banner', hidden: true }, 'Pausat – tidslinjen står still');
+  // Before the maximal effort: a drag factor unlike the last test of the same length (spec §7.3).
+  const dragBanner = h('p', { class: 'banner', hidden: true });
 
   const segLabel = h('div', { class: 'seg-label' }, workout ? '' : 'Fri åkning');
   const segLeft = h('div', { class: 'seg-left' }, '–');
@@ -69,7 +73,7 @@ export const liveView: View = (root, app) => {
     h(
       'div',
       { class: 'live' },
-      h('div', { class: 'live-main' }, canvas, countdown, maxOverlay, fps, h('div', { class: 'banners' }, banner, pausedBanner)),
+      h('div', { class: 'live-main' }, canvas, countdown, maxOverlay, fps, h('div', { class: 'banners' }, banner, pausedBanner, dragBanner)),
       h(
         'aside',
         { class: 'live-side' },
@@ -91,6 +95,7 @@ export const liveView: View = (root, app) => {
   let prevCountdown: number | null = null;
   let prevIndex = -1;
   let wakeLock: WakeLockSentinel | null = null;
+  let previous: TestResult | undefined;
 
   const stop = async (): Promise<void> => {
     if (!live || stopping) return;
@@ -131,6 +136,11 @@ export const liveView: View = (root, app) => {
       maxAvg.textContent = avg === null ? '–' : `snitt ${Math.round(avg)} W`;
     }
     pausedBanner.hidden = runner.state !== 'paused';
+    const df = l.dragFactor();
+    dragBanner.hidden = !(previous?.dragFactor !== undefined && df !== null && l.maxEffortAverage() === null && dragFactorDiffers(df, previous.dragFactor));
+    if (!dragBanner.hidden) {
+      dragBanner.textContent = `Dragfaktor ${df} – förra testet gjordes med ${previous!.dragFactor}. Ställ dämparen så att den blir densamma.`;
+    }
     pauseBtn.textContent = runner.state === 'paused' ? 'Fortsätt' : 'Paus';
     pauseBtn.disabled = runner.state !== 'running' && runner.state !== 'paused';
 
@@ -242,6 +252,8 @@ export const liveView: View = (root, app) => {
 
   void (async () => {
     const signature = await app.activeSignature();
+    const maxDuration = workout ? maxEffortDuration(workout) : null;
+    if (maxDuration !== null) previous = previousTest(await app.store.listTestResults(app.machine()), maxDuration, source.kind === 'simulator');
     let timeline = workout ? expand(workout, signature, settings.tolerance) : null;
     // Fit the intensity so the planned W′ lands on the minimum in settings (not for tests).
     if (timeline && signature && !isTest) timeline = calibrate(timeline, signature, calibrationOptions(settings)).timeline;

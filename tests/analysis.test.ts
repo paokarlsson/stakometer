@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeSession, timelineMapper } from '../src/session/analysis';
-import { suggestSignature, testResultFrom } from '../src/session/testResults';
+import { powerAt } from '../src/model/morton3p';
+import { dragFactorDiffers, mixedDragFactors, previousTest, suggestSignature, testResultFrom } from '../src/session/testResults';
 import type { Chunk, Session, TestResult } from '../src/storage/types';
 import type { TimelineSegment } from '../src/workout/schema';
 
@@ -28,11 +29,19 @@ const session = (timeline: TimelineSegment[] | null, mode: Session['mode'] = 'wo
   summary: null,
 });
 
-/** One stroke per second at the given powers, starting at t = 0.5. */
-const chunk = (powers: number[], runner: Chunk['runner']): Chunk => ({
+/** One stroke per second at the given powers, starting at t = 0.5, with drag factors if given. */
+const chunk = (powers: number[], runner: Chunk['runner'], dragFactors?: number[]): Chunk => ({
   sessionId: 's',
   seq: 0,
-  strokes: powers.map((power, i) => ({ t: i + 0.5, pmElapsed: 0, power, strokeRate: 30, strokeCount: i + 1, distance: 0 })),
+  strokes: powers.map((power, i) => ({
+    t: i + 0.5,
+    pmElapsed: 0,
+    power,
+    strokeRate: 30,
+    strokeCount: i + 1,
+    distance: 0,
+    ...(dragFactors && { raw: { dragFactor: dragFactors[i]! } }),
+  })),
   status: [],
   runner,
 });
@@ -79,7 +88,7 @@ describe('analyzeSession', () => {
     const timeline = [seg(0, 5, 100), seg(5, 15, null, true), seg(15, 20, 100)];
     const powers = [...Array(5).fill(100), ...Array(10).fill(400), ...Array(5).fill(100)];
     const full = analyzeSession(session(timeline, 'test'), [chunk(powers, [{ t: 0, state: 'running' }, { t: 20, state: 'finished' }])]);
-    expect(full.maxEffort).toMatchObject({ avgPower: 400, complete: true });
+    expect(full.maxEffort).toMatchObject({ avgPower: 400, complete: true, dragFactor: null });
     const cut = analyzeSession(session(timeline, 'test'), [chunk(powers.slice(0, 10), [{ t: 0, state: 'running' }, { t: 10, state: 'finished' }])]);
     expect(cut.maxEffort?.complete).toBe(false);
     expect(testResultFrom(session(timeline, 'test'), cut)).toBeNull();
@@ -93,42 +102,82 @@ describe('analyzeSession', () => {
       simulated: true,
     });
   });
+
+  it('takes the median drag factor over the maximal effort', () => {
+    const timeline = [seg(0, 5, 100), seg(5, 15, null, true), seg(15, 20, 100)];
+    const powers = [...Array(5).fill(100), ...Array(10).fill(400), ...Array(5).fill(100)];
+    // 90 during warm-up and cool-down; 110–112 during the effort, with one outlier.
+    const dfs = [...Array(5).fill(90), 110, 111, 111, 112, 111, 150, 111, 110, 111, 112, ...Array(5).fill(90)];
+    const a = analyzeSession(session(timeline, 'test'), [chunk(powers, [{ t: 0, state: 'running' }, { t: 20, state: 'finished' }], dfs)]);
+    expect(a.maxEffort?.dragFactor).toBe(111);
+    expect(testResultFrom(session(timeline, 'test'), a, () => 'r1')).toMatchObject({ dragFactor: 111 });
+  });
 });
 
 describe('suggestSignature (§7.3)', () => {
-  const r = (duration: number, avgPower: number, date: string, simulated = false): TestResult => ({
+  const r = (duration: number, avgPower: number, date: string, simulated = false, dragFactor?: number): TestResult => ({
     id: `${duration}-${date}`,
     sessionId: 'x',
     machine: 'skierg',
     duration,
     avgPower,
     date,
+    ...(dragFactor !== undefined && { dragFactor }),
     ...(simulated && { simulated }),
   });
+  // The reference signature in §5.3: CP 211, W′ 16 548, k 42.
+  const ref = { pp: 211 + 16548 / 42, cp: 211, wPrime: 16548 };
+  const at = (t: number, date: string, simulated = false) => r(t, powerAt(t, ref), date, simulated);
 
-  it('lists missing lengths', () => {
-    const s = suggestSignature([r(30, 440, '2026-09-01')], false);
-    expect(s).toMatchObject({ kind: 'missing', durations: [180, 600] });
+  it('lists the missing lengths until three are done', () => {
+    expect(suggestSignature([], false)).toMatchObject({ kind: 'missing', durations: [30, 180, 360, 720], results: [] });
+    const s = suggestSignature([at(30, '2026-09-01'), at(720, '2026-09-02')], false);
+    expect(s).toMatchObject({ kind: 'missing', durations: [180, 360] });
   });
 
-  it('fits the latest result per length when all three are within 14 days', () => {
-    const s = suggestSignature(
-      [r(30, 400, '2026-08-01'), r(30, 440.83, '2026-09-01'), r(180, 285.54, '2026-09-05'), r(600, 236.78, '2026-09-14')],
-      false,
-    );
-    expect(s.kind).toBe('fit');
-    if (s.kind === 'fit' && s.fit.ok) expect(s.fit.cp).toBeCloseTo(211, 0);
-    else throw new Error('expected a fit');
+  it('fits three lengths within 14 days, using the latest result per length', () => {
+    const s = suggestSignature([r(30, 400, '2026-08-01'), at(30, '2026-09-01'), at(180, '2026-09-05'), at(720, '2026-09-14')], false);
+    if (s.kind !== 'fit' || !s.fit.ok) throw new Error('expected a fit');
+    expect(s.results.map((x) => x.date)).toEqual(['2026-09-01', '2026-09-05', '2026-09-14']);
+    expect(s.missing).toEqual([360]);
+    expect(s.fit.cp).toBeCloseTo(211, 0);
+    expect(s.fit.residuals).toHaveLength(3);
   });
 
-  it('asks to redo the oldest test when the three span more than 14 days', () => {
-    const s = suggestSignature([r(30, 440, '2026-08-01'), r(180, 285, '2026-09-05'), r(600, 236, '2026-09-10')], false);
-    expect(s).toMatchObject({ kind: 'missing', durations: [30] });
+  it('fits all four with a residual per test', () => {
+    const results = [at(30, '2026-09-01'), at(180, '2026-09-02'), r(360, powerAt(360, ref) - 6, '2026-09-03'), at(720, '2026-09-04')];
+    const s = suggestSignature(results, false);
+    if (s.kind !== 'fit' || !s.fit.ok) throw new Error('expected a fit');
+    expect(s.missing).toEqual([]);
+    expect(s.fit.residuals).toHaveLength(4);
+    expect(s.fit.sse).toBeGreaterThan(1);
+    // The 6 min test lies under the curve.
+    expect(Math.min(...s.fit.residuals)).toBe(s.fit.residuals[2]);
+  });
+
+  it('only uses results within 14 days of the newest', () => {
+    const s = suggestSignature([at(30, '2026-08-01'), at(180, '2026-09-05'), at(360, '2026-09-08'), at(720, '2026-09-10')], false);
+    expect(s).toMatchObject({ kind: 'fit', missing: [30] });
+    const t = suggestSignature([at(30, '2026-08-01'), at(180, '2026-08-02'), at(360, '2026-09-05'), at(720, '2026-09-10')], false);
+    expect(t).toMatchObject({ kind: 'missing', durations: [30, 180] });
+    if (t.kind === 'missing') expect(t.results.map((x) => x.duration)).toEqual([360, 720]);
   });
 
   it('never mixes simulated and real results', () => {
-    const results = [r(30, 440, '2026-09-01', true), r(180, 285, '2026-09-02'), r(600, 236, '2026-09-03')];
-    expect(suggestSignature(results, false)).toMatchObject({ kind: 'missing', durations: [30] });
-    expect(suggestSignature(results, true)).toMatchObject({ kind: 'missing', durations: [180, 600] });
+    const results = [at(30, '2026-09-01', true), at(180, '2026-09-02'), at(360, '2026-09-03'), at(720, '2026-09-04', true)];
+    expect(suggestSignature(results, false)).toMatchObject({ kind: 'missing', durations: [30, 720] });
+    expect(suggestSignature(results, true)).toMatchObject({ kind: 'missing', durations: [180, 360] });
+  });
+
+  it('finds the previous test of the same length and compares drag factors', () => {
+    const all = [r(180, 280, '2026-09-01', false, 110), r(180, 285, '2026-09-10', false, 118), r(180, 290, '2026-09-12', true, 110), r(360, 250, '2026-09-11')];
+    expect(previousTest(all, 180, false)?.date).toBe('2026-09-10');
+    expect(previousTest(all, 180, false, '2026-09-10')?.date).toBe('2026-09-01');
+    expect(previousTest(all, 180, true)?.date).toBe('2026-09-12');
+    expect(previousTest(all, 720, false)).toBeUndefined();
+    expect(dragFactorDiffers(110, 115)).toBe(false);
+    expect(dragFactorDiffers(110, 116)).toBe(true);
+    expect(mixedDragFactors(all)).toEqual({ min: 110, max: 118 });
+    expect(mixedDragFactors([all[0]!, all[2]!, all[3]!])).toBeNull();
   });
 });

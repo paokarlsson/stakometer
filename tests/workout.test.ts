@@ -229,7 +229,8 @@ describe('test workouts (§7.1)', () => {
     expect(TEST_WORKOUTS.map((w) => [w.id, maxEffortDuration(w)])).toEqual([
       ['test-30s', 30],
       ['test-180s', 180],
-      ['test-600s', 600],
+      ['test-360s', 360],
+      ['test-720s', 720],
     ]);
     const t = expand(TEST_WORKOUTS[1]!, { cp: 200 });
     expect(t.map((s) => s.label)).toEqual(['Uppvärmning', 'Ökning', 'Uppvärmning', 'Ökning', 'Uppvärmning', 'Lätt', 'Maxinsats – MAX', 'Nedvarvning']);

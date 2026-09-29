@@ -25,6 +25,22 @@ describe('fit3p (§5.3)', () => {
     expect(r.ok && r.pp).toBeCloseTo(550, 0);
   });
 
+  it('gives the residual per point for four tests', () => {
+    const sig = { pp: 550, cp: 220, wPrime: 18000 };
+    const exact = fit3p([30, 180, 360, 720].map((t) => ({ t, p: powerAt(t, sig) })));
+    if (!exact.ok) throw new Error(exact.error);
+    expect(exact.cp).toBeCloseTo(220, 1);
+    exact.residuals.forEach((r) => expect(Math.abs(r)).toBeLessThan(0.01));
+
+    // 6 min 8 W under the curve: the fit leaves a residual, and SSE is their sum of squares.
+    const off = fit3p([30, 180, 360, 720].map((t) => ({ t, p: powerAt(t, sig) - (t === 360 ? 8 : 0) })));
+    if (!off.ok) throw new Error(off.error);
+    expect(off.residuals).toHaveLength(4);
+    expect(off.sse).toBeCloseTo(off.residuals.reduce((a, r) => a + r * r, 0), 6);
+    expect(Math.abs(off.residuals[2]!)).toBe(Math.max(...off.residuals.map(Math.abs)));
+    expect(off.residuals[2]!).toBeLessThan(-2);
+  });
+
   it('solves CP and W′ by least squares for a fixed k', () => {
     const f = fitForK([{ t: 0, p: 300 }, { t: 50, p: 250 }, { t: 150, p: 225 }], 50)!;
     expect(f.cp).toBeCloseTo(200);

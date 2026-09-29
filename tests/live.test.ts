@@ -66,6 +66,15 @@ describe('LiveSession', () => {
     expect(live.currentPowerAvg()).toBeLessThan(1);
   });
 
+  it('keeps the drag factor from the latest stroke that had one', async () => {
+    const { live, source, ride } = await setup();
+    ride(0, 2, 150);
+    expect(live.dragFactor()).toBeNull();
+    source.strokes.emit({ ts: 0, pmElapsed: 2, power: 150, strokeRate: 36, strokeCount: 3, distance: 0, raw: { dragFactor: 112 } });
+    ride(2, 4, 150);
+    expect(live.dragFactor()).toBe(112);
+  });
+
   it('records runner states and stops as aborted when ended early', async () => {
     const { live, store, ride } = await setup();
     ride(0, 30, 200);

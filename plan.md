@@ -53,10 +53,12 @@ Målet är en elitmotionär i långlopp. Det viktigaste talet är CP, och det sk
 
 ### Vad som ändras i appen (steg 4)
 
-- Nya testpass `test-360s` och `test-720s`. `test-600s` finns kvar så att gamla resultat går att läsa, men visas inte bland testen.
+**Status: klart** (2026-09-29). Detaljerna står i spec §7 och §12.
+
+- Nya testpass `test-360s` och `test-720s`. `test-600s` tas bort, eftersom det inte finns några gamla resultat att läsa.
 - `TEST_DURATIONS` blir `[30, 180, 360, 720]`. Förslaget på ny signatur kräver minst tre olika längder inom 14 dagar, inte exakt tre bestämda. Senaste resultatet per längd används.
 - `fit3p` klarar redan fler än tre punkter. Residualen (SSE och största avvikelse i watt) visas i resultatvyn.
-- Dragfaktorn sparas i `TestResult`. Vid teststart visas en varning om den skiljer sig från förra testet för samma längd.
+- Dragfaktorn sparas i `TestResult`. Vid teststart visas en varning om den skiljer sig från förra testet för samma längd (mer än 5).
 
 **Klart när:** fyra test i simulatorn (`fatigue`, sann signatur 550/220/18 000) ger CP inom ±3 % och W′ inom ±10 %, residualen visas, och varningen för dragfaktorn syns när den ändras.
 
@@ -147,7 +149,7 @@ Fortsätter numreringen i spec §12.
 
 | Steg | Innehåll | Avsnitt |
 |---|---|---|
-| 4 | Testbatteriet: 6 och 12 min, residual, dragfaktor i testresultatet | §3 |
+| 4 | Testbatteriet: 6 och 12 min, residual, dragfaktor i testresultatet (klart 2026-09-29) | §3 |
 | 5 | Import av planerade pass med `id`, `date` och `calibration` | §4.1 |
 | 6 | Fånga mer: puls via PM5 och pulsband, kraftkurva som rådata | §5 |
 | 7 | Breakthroughs inom passet | §6 |

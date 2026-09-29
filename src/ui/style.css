@@ -111,13 +111,18 @@ button:disabled {
   cursor: not-allowed;
 }
 
-select {
+select,
+input.narrow {
   font: inherit;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 4px 8px;
+}
+
+input.narrow {
+  width: 5rem;
 }
 
 .choice {

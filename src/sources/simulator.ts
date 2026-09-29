@@ -23,6 +23,8 @@ export interface SimulatorOptions {
   freePower?: number;
   /** Starting power for `manual`. */
   manualPower?: number;
+  /** Drag factor reported with each stroke, like the PM5. */
+  dragFactor?: number;
   /** Uniform [0, 1) random source, injectable for tests. */
   random?: () => number;
   /** Real-time tick interval of the driving timer. */
@@ -34,6 +36,7 @@ export const POWER_NOISE_SD = 0.07;
 export const DEVIATION_PROBABILITY = 0.05;
 export const DEVIATION = 0.2;
 export const MANUAL_STEP_W = 10;
+export const DEFAULT_DRAG_FACTOR = 110;
 const STROKE_RATE_NOISE_SD = 1;
 const IDLE_AFTER_S = 4; // no stroke for this long means standing still (cf. §5.4)
 const IDLE_POLL_S = 0.25;
@@ -76,6 +79,7 @@ export class Simulator extends BaseSource {
   private readonly target: () => number | null;
   private readonly maxEffort: () => number | null;
   readonly trueSignature: SignatureParams;
+  dragFactor: number;
   /** The fatigue mode's own W′ balance, J. */
   trueWbal: number;
   private readonly freePower: number;
@@ -104,6 +108,7 @@ export class Simulator extends BaseSource {
     this.maxEffort = opts.maxEffort ?? (() => null);
     this.trueSignature = opts.trueSignature ?? TRUE_SIGNATURE;
     this.trueWbal = this.trueSignature.wPrime;
+    this.dragFactor = opts.dragFactor ?? DEFAULT_DRAG_FACTOR;
     this.freePower = opts.freePower ?? 180;
     this.manualPower = opts.manualPower ?? 150;
     this.random = opts.random ?? Math.random;
@@ -202,6 +207,7 @@ export class Simulator extends BaseSource {
       strokeRate: Math.round(rate),
       strokeCount: this.strokeCount,
       distance: this.distance,
+      raw: { dragFactor: this.dragFactor },
     });
   }
 
