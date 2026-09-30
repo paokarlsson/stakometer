@@ -508,3 +508,39 @@ details summary {
   width: 1.2em;
   height: 0.35em;
 }
+
+/* Planned workouts (spec §6.7) */
+.planned-info {
+  border-top: 1px solid var(--line);
+  margin: 8px 0 16px;
+  padding-top: 8px;
+}
+
+.planned-info h3 {
+  margin: 8px 0 4px;
+}
+
+.description {
+  white-space: pre-line;
+}
+
+.outline {
+  margin: 8px 0;
+  padding-left: 1.25rem;
+}
+
+.outline li {
+  margin-bottom: 6px;
+}
+
+.segment .seg-block {
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.segment .seg-desc {
+  font-size: 1.05rem;
+  line-height: 1.35;
+  margin: 6px 0;
+  white-space: pre-line;
+}

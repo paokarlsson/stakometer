@@ -1,0 +1,181 @@
+{
+  "format": "stakometer-plan",
+  "version": 1,
+  "athlete": {
+    "maxHR": 188,
+    "thresholdHR": 168,
+    "restingHR": 44,
+    "weight": 82.5,
+    "pp": 610,
+    "cp": 215,
+    "wPrime": 16500,
+    "dragFactor": 110,
+    "asOf": "2026-10-04"
+  },
+  "workouts": [
+    {
+      "id": "2026-10-05-lugnt-teknikpass",
+      "date": "2026-10-05",
+      "name": "Lugnt teknikpass",
+      "description": "45–60 min på 60–70 % CP. Fokus på hög höft, vertikal stav och 1 Hz. Hellre för lugnt än för hårt."
+    },
+    {
+      "id": "2026-10-06-5x4-min-vo2peak",
+      "date": "2026-10-06",
+      "name": "5×4 min VO2peak",
+      "description": "Bromsar VO2max-tappet. Jämna intervaller: den sista ska vara lika bra som den första.",
+      "calibration": {
+        "mode": "fit",
+        "minWbal": 0.3
+      },
+      "segments": [
+        {
+          "kind": "block",
+          "label": "Uppvärmning",
+          "description": "Lugnt, med två korta ökningar mot slutet.",
+          "segments": [
+            {
+              "kind": "warmup",
+              "label": "Lugnt",
+              "duration": 480,
+              "target": {
+                "pctCP": 60
+              }
+            },
+            {
+              "kind": "warmup",
+              "label": "Ökning",
+              "duration": 10,
+              "target": {
+                "pctCP": 120
+              },
+              "repeat": 2,
+              "rest": {
+                "duration": 50,
+                "target": {
+                  "pctCP": 60
+                }
+              }
+            },
+            {
+              "kind": "warmup",
+              "label": "Lugnt",
+              "duration": 120,
+              "target": {
+                "pctCP": 60
+              }
+            }
+          ]
+        },
+        {
+          "kind": "interval",
+          "description": "Jämnt tryck, samma takt hela vägen.",
+          "duration": 240,
+          "target": {
+            "pctCP": 108
+          },
+          "repeat": 5,
+          "rest": {
+            "duration": 180,
+            "target": {
+              "pctCP": 45
+            },
+            "description": "Aktiv vila, släpp axlarna."
+          }
+        },
+        {
+          "kind": "cooldown",
+          "description": "Lugnt, valfri teknik.",
+          "duration": 600,
+          "target": null
+        }
+      ]
+    },
+    {
+      "id": "2026-10-08-tempo-3x15-min",
+      "date": "2026-10-08",
+      "name": "Tempo 3×15 min",
+      "description": "Tävlingsfart i långlopp. Styr på watt, inte på puls.",
+      "segments": [
+        {
+          "kind": "warmup",
+          "description": "Fritt. Öka gradvis till tempo de sista 3 minuterna.",
+          "duration": 900,
+          "target": null
+        },
+        {
+          "kind": "interval",
+          "duration": 900,
+          "target": {
+            "pctCP": 91.5
+          },
+          "tolerance": 0.0383,
+          "repeat": 3,
+          "rest": {
+            "duration": 240,
+            "target": {
+              "pctCP": 50
+            }
+          }
+        },
+        {
+          "kind": "cooldown",
+          "description": "Lugnt.",
+          "duration": 600,
+          "target": null
+        }
+      ]
+    },
+    {
+      "id": "2026-10-10-ryck-i-klunga",
+      "date": "2026-10-10",
+      "name": "Ryck i klunga",
+      "description": "Återfyllnad av W′ och taktik. Rycken ska kännas som att hänga på en rygg i klungan.",
+      "calibration": {
+        "mode": "lower",
+        "minWbal": 0.2
+      },
+      "segments": [
+        {
+          "kind": "warmup",
+          "duration": 600,
+          "target": {
+            "pctCP": 65
+          }
+        },
+        {
+          "kind": "block",
+          "label": "Klunga",
+          "description": "Lugnt i klungan tills det är dags att rycka.",
+          "repeat": 12,
+          "segments": [
+            {
+              "kind": "steady",
+              "duration": 390,
+              "target": {
+                "pctCP": 75
+              }
+            },
+            {
+              "kind": "interval",
+              "label": "Ryck",
+              "description": "Full kraft i stavarna.",
+              "duration": 30,
+              "target": {
+                "pctCP": 140
+              },
+              "tolerance": 0.0714
+            }
+          ]
+        },
+        {
+          "kind": "cooldown",
+          "duration": 600,
+          "target": {
+            "pctCP": 60
+          }
+        }
+      ]
+    }
+  ]
+}

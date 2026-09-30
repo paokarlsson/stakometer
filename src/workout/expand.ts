@@ -1,11 +1,11 @@
 // Workout → flat timeline (spec §6.2).
 import type { SignatureParams } from '../model/signature';
-import type { Target, TimelineSegment, Workout, WorkoutSegment } from './schema';
+import type { RestSpec, Target, TimelineSegment, Workout, WorkoutSegment, WorkoutStep } from './schema';
 
 /** [FÖRSLAG] default band half-width (spec §6.1). */
 export const DEFAULT_TOLERANCE = 0.05;
 
-const KIND_LABEL: Record<string, string> = {
+export const KIND_LABEL: Record<string, string> = {
   warmup: 'Uppvärmning',
   interval: 'Intervall',
   rest: 'Vila',
@@ -14,14 +14,23 @@ const KIND_LABEL: Record<string, string> = {
   test: 'Test',
 };
 
+/** Name of a block without a label, shown only when it repeats. */
+export const BLOCK_LABEL = 'Block';
+
+/** Where a step sits: the enclosing blocks' labels and the nearest block description. */
+interface Context {
+  block?: string;
+  description?: string;
+}
+
 /**
- * Expands repeats (rest between repetitions, not after the last) and converts
- * targets to watts. With no signature, %CP targets become "no target".
+ * Expands repeats (rest between repetitions, not after the last) and blocks, and
+ * converts targets to watts. With no signature, %CP targets become "no target".
  */
 export function expand(workout: Workout, signature: Pick<SignatureParams, 'cp'> | null, defaultTolerance = DEFAULT_TOLERANCE): TimelineSegment[] {
   const out: TimelineSegment[] = [];
   let t = 0;
-  const add = (kind: string, label: string, duration: number, target: Target, tolerance: number): void => {
+  const add = (kind: string, label: string, duration: number, target: Target, tolerance: number, ctx: Context): void => {
     const isMax = target !== null && 'max' in target;
     const targetW = toWatts(target, signature);
     out.push({
@@ -33,24 +42,46 @@ export function expand(workout: Workout, signature: Pick<SignatureParams, 'cp'> 
       lo: targetW === null ? null : targetW * (1 - tolerance),
       hi: targetW === null ? null : targetW * (1 + tolerance),
       isMax,
+      ...(ctx.block !== undefined && { block: ctx.block }),
+      ...(ctx.description !== undefined && { description: ctx.description }),
     });
     t += duration;
   };
+  // A rest belongs to the context around the repeated step, not to the step itself.
+  const addRest = (rest: RestSpec, ctx: Context): void =>
+    add('rest', KIND_LABEL.rest!, rest.duration, rest.target, rest.tolerance ?? defaultTolerance, withDescription(ctx, rest.description));
 
-  for (const seg of workout.segments) {
-    const reps = seg.repeat ?? 1;
-    const label = seg.label ?? KIND_LABEL[seg.kind] ?? seg.kind;
-    for (let i = 1; i <= reps; i++) {
-      // "Intervall 2/4", or with a custom label "Block 1 · 2/10"
-      const repLabel = reps === 1 ? label : seg.label ? `${label} · ${i}/${reps}` : `${label} ${i}/${reps}`;
-      add(seg.kind, repLabel, seg.duration, seg.target, tol(seg, defaultTolerance));
-      if (seg.rest && i < reps) {
-        add('rest', KIND_LABEL.rest!, seg.rest.duration, seg.rest.target, seg.rest.tolerance ?? defaultTolerance);
+  const walk = (steps: readonly WorkoutStep[], ctx: Context): void => {
+    for (const step of steps) {
+      const reps = step.repeat ?? 1;
+      if (step.kind === 'block') {
+        const name = step.label ?? (reps > 1 ? BLOCK_LABEL : undefined);
+        for (let i = 1; i <= reps; i++) {
+          const inner: Context = { ...ctx };
+          if (name !== undefined) {
+            const here = reps === 1 ? name : `${name} ${i}/${reps}`;
+            inner.block = ctx.block === undefined ? here : `${ctx.block} · ${here}`;
+          }
+          walk(step.segments, withDescription(inner, step.description));
+          if (step.rest && i < reps) addRest(step.rest, ctx);
+        }
+        continue;
+      }
+      const label = step.label ?? KIND_LABEL[step.kind] ?? step.kind;
+      for (let i = 1; i <= reps; i++) {
+        // "Intervall 2/4", or with a custom label "Block 1 · 2/10"
+        const repLabel = reps === 1 ? label : step.label ? `${label} · ${i}/${reps}` : `${label} ${i}/${reps}`;
+        add(step.kind, repLabel, step.duration, step.target, tol(step, defaultTolerance), withDescription(ctx, step.description));
+        if (step.rest && i < reps) addRest(step.rest, ctx);
       }
     }
-  }
+  };
+  walk(workout.segments, {});
   return out;
 }
+
+/** The context with a more specific description, when there is one. */
+const withDescription = (ctx: Context, description: string | undefined): Context => (description === undefined ? ctx : { ...ctx, description });
 
 export function totalDuration(timeline: readonly TimelineSegment[]): number {
   return timeline.at(-1)?.end ?? 0;

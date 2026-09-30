@@ -68,21 +68,27 @@ Två filer, inget annat. Ingen gemensam kod och ingen gemensam lagring.
 
 ### 4.1 In: planerade pass (steg 5)
 
-elitledet skriver en fil per vecka. Formatet är stakometers passformat (spec §6.1) med tre tillägg per pass:
+**Status: klart** (2026-09-30). Formatet står i spec §6.7.
+
+elitledet skriver en fil per vecka med `python -m planering`. Formatet är stakometers passformat (spec §6.1) med tre tillägg per pass (`id`, `date`, `calibration`) och atletens värden i `athlete`:
 
 ```json
 {
   "format": "stakometer-plan",
   "version": 1,
+  "athlete": { "maxHR": 188, "thresholdHR": 168, "cp": 215, "wPrime": 16500, "pp": 610, "dragFactor": 110, "asOf": "2026-10-04" },
   "workouts": [
     {
       "id": "2026-10-08-vo2",
       "date": "2026-10-08",
       "name": "5×4 min",
+      "description": "Jämna intervaller.",
       "calibration": { "mode": "fit", "minWbal": 0.3 },
       "segments": [
+        { "kind": "warmup", "duration": 900, "target": { "pctCP": 60 }, "description": "Lugnt." },
         { "kind": "interval", "duration": 240, "target": { "pctCP": 108 }, "repeat": 5,
-          "rest": { "duration": 180, "target": { "pctCP": 45 } } }
+          "rest": { "duration": 180, "target": { "pctCP": 45 } } },
+        { "kind": "cooldown", "duration": 600, "target": null }
       ]
     }
   ]
@@ -92,16 +98,19 @@ elitledet skriver en fil per vecka. Formatet är stakometers passformat (spec §
 - **`id`** är passets id i elitledets plan. Det sparas som `workoutId` på passet, så att elitledet kan koppla ihop planerat och genomfört utan att gissa.
 - **`date`** styr bara ordningen i listan: dagens pass först.
 - **`calibration`** ersätter inställningen i spec §8.5 för just det passet. `fit` med `minWbal` är standard för pass över CP: då är `pctCP` ett startvärde, och det är den lägsta W′-nivån som bestämmer watten. `off` används när watten i sig är poängen, till exempel ett pass som kontrollerar CP. Pass under CP påverkas inte, eftersom anpassningen bara ändrar arbete över CP.
+- **`athlete`** (beslut 2026-09-30): maxpuls, tröskelpuls, vilopuls, vikt, PP, CP, W′ och dragfaktor, när coachen har dem. Alla är valfria. stakometer visar pulsen i procent av tröskel- eller maxpuls, varnar när planens CP eller W′ skiljer från den aktiva signaturen och när dragfaktorn skiljer från planens. Watten räknas alltid från stakometers egen signatur.
+- **Från ostrukturerat till strukturerat** (beslut 2026-09-30): ett pass utan `segments` är bara namn och beskrivning och körs som fri åkning. Segment utan mål (`target: null`) visar tid och beskrivning. Block grupperar och upprepar segment, till exempel en uppvärmning eller 3 × (10 × 40/20).
+- **`description`** kan stå på passet, varje segment, block och vila, och visas i livevyn.
 - Import sker från fil på startsidan. Importerade pass sparas i databasen och följer med i backupen.
 - En felaktig fil ger ett begripligt fel, och inget importeras.
 
 Det här ersätter passeditorn, som inte längre är planerad.
 
-**Klart när:** en fil med tre pass importeras, ett av dem körs, och backupen visar passet med rätt `workoutId` och den watt som anpassningen gav.
+**Klart när:** en fil med tre pass importeras, ett av dem körs, och backupen visar passet med rätt `workoutId` och den watt som anpassningen gav. `tests/plan.test.ts` kör kedjan med elitledets exempelfil (fyra pass) och simulatorn. Importen, startsidan och livevyn är också provade i Chrome med simulatorn.
 
 ### 4.2 Ut: backupen
 
-Backupen i spec §11 (`format: 'skierg-backup'`) är det som elitledet läser. Den innehåller pass, tidslinje, signatur, drag, status, pauser, avbrott och testresultat.
+Backupen i spec §11 (`format: 'skierg-backup'`) är det som elitledet läser. Den innehåller pass, tidslinje, signatur, drag, status, pauser, avbrott, testresultat och de planerade passen. Ett pass från planen har `workoutId` och en kopia av det planerade passet i `planned`.
 
 - Formatet ändras bara med ny `version`, och elitledet ska uppdateras i samma veva.
 - Rådata först (spec §11) gäller fortsatt: allt PM5 ger sparas, även det stakometer själv inte använder.
@@ -150,7 +159,7 @@ Fortsätter numreringen i spec §12.
 | Steg | Innehåll | Avsnitt |
 |---|---|---|
 | 4 | Testbatteriet: 6 och 12 min, residual, dragfaktor i testresultatet (klart 2026-09-29) | §3 |
-| 5 | Import av planerade pass med `id`, `date` och `calibration` | §4.1 |
+| 5 | Import av planerade pass med `id`, `date`, `calibration`, `athlete`, beskrivningar och block (klart 2026-09-30) | §4.1 |
 | 6 | Fånga mer: puls via PM5 och pulsband, kraftkurva som rådata | §5 |
 | 7 | Breakthroughs inom passet | §6 |
 

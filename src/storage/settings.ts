@@ -4,6 +4,7 @@ import { POWER_AVG_STROKES } from '../session/live';
 import type { Machine } from '../sources/DataSource';
 import type { CalibrationMode } from '../workout/calibrate';
 import { DEFAULT_TOLERANCE } from '../workout/expand';
+import type { PlanCalibration } from '../workout/plan';
 
 export interface Settings {
   /** Default band half-width, e.g. 0.05 = ±5 %. */
@@ -74,7 +75,10 @@ export function wbalOptions(s: Settings): WbalOptions {
   return { model: s.wbalModel, skiba: s.skiba };
 }
 
-/** The workout's timeline fitted to the settings' lowest W′ (tests are never fitted). */
-export function calibrationOptions(s: Settings): { mode: CalibrationMode; minFraction: number; wbal: WbalOptions } {
-  return { mode: s.calibration, minFraction: s.minWbal, wbal: wbalOptions(s) };
+/**
+ * How a workout's timeline is fitted to the lowest W′ (tests are never fitted). A planned
+ * workout's own calibration (plan.md §4.1) goes before the settings.
+ */
+export function calibrationOptions(s: Settings, override?: PlanCalibration): { mode: CalibrationMode; minFraction: number; wbal: WbalOptions } {
+  return { mode: override?.mode ?? s.calibration, minFraction: override?.minWbal ?? s.minWbal, wbal: wbalOptions(s) };
 }

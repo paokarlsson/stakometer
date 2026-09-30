@@ -1,5 +1,6 @@
 import type { FitnessSignature } from '../model/signature';
 import type { ConnectionState, Machine, StatusSample, StrokeSample } from '../sources/DataSource';
+import type { PlannedWorkout } from '../workout/plan';
 import type { TimelineSegment } from '../workout/schema';
 
 export type SessionMode = 'workout' | 'test' | 'free';
@@ -22,6 +23,8 @@ export interface Session {
   source: 'pm5' | 'simulator';
   mode: SessionMode;
   workoutId?: string;
+  /** Copy of the planned workout when it came from an imported plan (plan.md §4.1). */
+  planned?: PlannedWorkout;
   timeline: TimelineSegment[] | null;
   signatureId: string | null;
   signatureSnapshot: FitnessSignature | null;

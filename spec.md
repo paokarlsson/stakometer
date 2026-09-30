@@ -98,7 +98,7 @@ src/
                pm5/  uuids.ts, parse.ts, ble.ts (Bluetooth)
                      csafe.ts, usb.ts           (USB)
   model/       signature.ts, morton3p.ts, fit3p.ts, resample.ts, wbal.ts, mpa.ts
-  workout/     schema.ts, expand.ts, runner.ts, builtin/*.json
+  workout/     schema.ts, expand.ts, runner.ts, plan.ts, builtin/*.json
   session/     recorder.ts, summary.ts
   storage/     db.ts, backup.ts
   ui/          views/ (start, live, test, session, history, settings)
@@ -305,10 +305,13 @@ Gränserna ska vara konfigurerbara konstanter.
 ```
 
 - **`target`** är ett av följande: `{ "watt": number }`, `{ "pctCP": number }`, `{ "max": true }` (testinsats, inget band) eller `null` (inget mål). `pctCP` räknas om till watt när passet expanderas, med den aktiva signaturen.
-- **`kind`** är ett av: `warmup`, `interval`, `rest`, `steady`, `cooldown`, `test`.
+- **`kind`** är ett av: `warmup`, `interval`, `rest`, `steady`, `cooldown`, `test`, eller `block` (nedan).
 - **`label`** (valfri per segment): namn som visas i stället för namnet på `kind`, till exempel "Ökning".
+- **`description`** (valfri på passet, segmentet, blocket och vilan): fritext till atleten. Livevyn visar segmentets beskrivning, annars närmaste blocks. Före start och i ett pass utan segment visas passets.
 - **`repeat` och `rest`:** Vilan läggs *mellan* repetitionerna, inte efter den sista.
 - **`tolerance`** (valfri per segment): relativ andel av målet. Standard ±5 % [FÖRSLAG].
+- **Block** (tillagt i steg 5, `plan.md` §4.1): `{ "kind": "block", "label"?, "description"?, "repeat"?, "rest"?, "segments": [...] }` grupperar segment, till exempel uppvärmningen, och kan upprepas: 3 × (10 × 40/20) skrivs som ett block med `repeat: 3`. Block kan nästlas i högst fyra nivåer. `rest` läggs mellan blockets repetitioner. I tidslinjen får segmenten i ett block `block`, till exempel "Klunga 3/12". Ett block utan `label` som inte upprepas syns inte.
+- **Utan `segments`** är passet ostrukturerat. Det körs som fri åkning (§6.4) med passets beskrivning och sparas med `workoutId`. En tom lista är ett fel.
 - **Saknad signatur:** Om passet använder `pctCP` men ingen signatur finns, får användaren välja mellan att mata in en signatur eller köra passet utan mål.
 
 ### 6.2 Expansion
@@ -322,6 +325,8 @@ interface TimelineSegment {
   targetW: number | null;              // null = inget mål
   lo: number | null; hi: number | null;
   isMax: boolean;
+  block?: string;                      // omgivande block, t.ex. "Serie 2/3"
+  description?: string;                // segmentets beskrivning, annars närmaste blocks
 }
 ```
 
@@ -345,7 +350,7 @@ Träningspassen har ingen uppvärmning eller nedvarvning (användarens beslut 20
 4. **2×15 min:** 2 × 15 min på 95 % CP med 3 min vila på 40 % CP.
 5. **6×5 min:** 6 × 5 min på 100 % CP med 1 min vila på 40 % CP.
 6. **10×3 min:** 10 × 3 min på 105 % CP med 1 min vila på 40 % CP.
-7. **3×10 min 40/20:** tre block med 10 × (40 s på 120 % CP / 20 s på 40 % CP) och 3 min vila på 40 % CP mellan blocken. Formatet saknar nästlade upprepningar, så blocken står var för sig och heter "Block 1 · 3/10" osv. Intensiteter och vilor i pass 4–7 är [FÖRSLAG].
+7. **3×10 min 40/20:** tre block med 10 × (40 s på 120 % CP / 20 s på 40 % CP) och 3 min vila på 40 % CP mellan blocken. Passet skrevs innan formatet fick block (§6.1), så blocken står var för sig och heter "Block 1 · 3/10" osv. Intensiteter och vilor i pass 4–7 är [FÖRSLAG].
 8. **Fri åkning:** Ett eget läge utan tidslinje. Livevyn visar effekt, MPA och W′-batteri men inget målband. Passet pågår tills användaren stoppar.
 
 Testpassen beskrivs i §7.
@@ -364,6 +369,45 @@ Ett pass anpassas till användarens signatur så att den **planerade** W′-bala
 ### 6.6 Ramper runt intervaller (användarens beslut 2026-09-24)
 
 Under de 5 s före en intervall och de 5 s efter den går mål och band linjärt mellan grannsegmentets mål och intervallens. Rampen ligger i grannsegmentet (oftast vilan), så intervallen behåller sitt fulla mål hela tiden. Om grannsegmentet är kortare än två ramper får varje ramp halva längden. Det blir ingen ramp mot passets början eller slut, mellan två intervaller eller där något av segmenten saknar mål. Ramperna gäller livevyn, simulatorns mål, andelen tid inom bandet (§8.3) och W′-planen (§6.5). De räknas fram ur tidslinjen och sparas inte.
+
+### 6.7 Planerade pass (steg 5, `plan.md` §4.1)
+
+elitledet skriver en fil per vecka med `python -m planering` (elitledets `docs/planfiler.md`). Filen importeras från startsidan. Exempelfilen `tests/fixtures/plan/plan-exempel.json` ska vara identisk med elitledets `tests/fixtures/plan-exempel.json`. Förkortat utdrag:
+
+```json
+{
+  "format": "stakometer-plan",
+  "version": 1,
+  "athlete": { "maxHR": 188, "thresholdHR": 168, "restingHR": 44, "weight": 82.5,
+               "pp": 610, "cp": 215, "wPrime": 16500, "dragFactor": 110, "asOf": "2026-10-04" },
+  "workouts": [
+    { "id": "2026-10-05-lugnt-teknikpass", "date": "2026-10-05", "name": "Lugnt teknikpass",
+      "description": "45–60 min på 60–70 % CP. Fokus på hög höft, vertikal stav och 1 Hz." },
+    { "id": "2026-10-06-5x4-min-vo2peak", "date": "2026-10-06", "name": "5×4 min VO2peak",
+      "description": "Bromsar VO2max-tappet.",
+      "calibration": { "mode": "fit", "minWbal": 0.3 },
+      "segments": [
+        { "kind": "block", "label": "Uppvärmning", "description": "Lugnt, med två korta ökningar mot slutet.",
+          "segments": [
+            { "kind": "warmup", "label": "Lugnt", "duration": 480, "target": { "pctCP": 60 } },
+            { "kind": "warmup", "label": "Ökning", "duration": 10, "target": { "pctCP": 120 }, "repeat": 2,
+              "rest": { "duration": 50, "target": { "pctCP": 60 } } } ] },
+        { "kind": "interval", "description": "Jämnt tryck.", "duration": 240, "target": { "pctCP": 108 }, "repeat": 5,
+          "rest": { "duration": 180, "target": { "pctCP": 45 }, "description": "Aktiv vila." } },
+        { "kind": "cooldown", "description": "Lugnt, valfri teknik.", "duration": 600, "target": null }
+      ] }
+  ]
+}
+```
+
+- **Passen** har formatet i §6.1 plus `date` (ÅÅÅÅ-MM-DD) och valfri `calibration`. `id` sparas som `workoutId` på passet, och en kopia av det planerade passet sparas som `planned`, så att elitledet kan koppla ihop planerat och genomfört.
+- **`calibration`** `{ "mode": "fit" | "lower" | "off", "minWbal"? }` går före inställningen i §8.5 för just det passet. Utan `minWbal` gäller inställningens.
+- **`athlete`** är det coachen visste när planen skrevs. Alla fält är valfria: `maxHR`, `thresholdHR`, `restingHR` (slag/min), `weight` (kg), `pp`, `cp` (W), `wPrime` (J), `dragFactor` och `asOf` (datum). Okända fält ignoreras. Värdena kopieras till varje pass i filen och används så här:
+  - Livevyn visar pulsen också i procent av tröskelpulsen, eller av maxpulsen om tröskelpulsen saknas.
+  - Startsidan varnar när planens CP skiljer mer än 3 % eller W′ mer än 10 % från den aktiva signaturen [FÖRSLAG]. Watten räknas alltid från den aktiva signaturen. Är den aktiva signaturen standardvärden för PM5 (§5.1) och planen har PP, CP och W′ kan de sparas som manuell signatur med en knapp. Med simulatorn jämförs inget.
+  - Livevyn varnar under de första 3 minuterna om dragfaktorn skiljer mer än 5 från planens [FÖRSLAG]. I ett testpass gäller förra testet med samma längd i första hand (§7.3).
+- **Import:** hela filen valideras först. Ett fel ger ett begripligt meddelande, och inget importeras. Ett pass med samma `id` som ett tidigare importerat ersätts.
+- **Startsidan** listar planerade pass först: dagens, sedan kommande efter datum, sedan den senaste veckans. Äldre ligger kvar i databasen och backupen men visas inte. Ett genomfört pass markeras med ✓. Det valda passet visas med beskrivning, struktur, anpassning och atletens värden, och kan tas bort från listan.
 
 ---
 
@@ -412,7 +456,7 @@ Under inställningar kan användaren mata in PP, CP och W′ direkt, med valider
 - Knappar för "Anslut PM5 via USB", "Anslut via Bluetooth" och "Använd simulator", plus anslutningsstatus.
 - Panelen "Felsökning": logga rådata, visa rå hex bredvid tolkade drag och ladda ned loggen som JSON.
 - Aktiv signatur. Standardvärden (§5.1) visas som sådana, med en uppmaning att göra test eller mata in egna.
-- Val av pass (inbyggda pass, testpass, fri åkning) och startknapp. För ett testpass visas förra resultatet med samma längd och dess dragfaktor (§7.3).
+- Val av pass (planerade pass från elitledet, inbyggda pass, testpass, fri åkning) och startknapp. De planerade passen står överst med knappen "Importera plan…" (§6.7). För ett testpass visas förra resultatet med samma längd och dess dragfaktor (§7.3).
 
 ### 8.2 Livevy
 
@@ -542,20 +586,22 @@ Simulatorn implementerar `DataSource` och används med `SimClock`.
 
 ## 11. Lagring
 
-IndexedDB-databasen heter `skierg-training`, version 1.
+IndexedDB-databasen heter `skierg-training`, version 2 (version 2 lade till `plannedWorkouts`).
 
 | Store | Innehåll | Nyckel och index |
 |---|---|---|
-| `sessions` | `{ id, startedAt, machine, mode: 'workout' \| 'test' \| 'free', workoutId?, timeline, signatureId, signatureSnapshot, status: 'completed' \| 'aborted', summary }` | `id`, index på `startedAt` |
+| `sessions` | `{ id, startedAt, machine, mode: 'workout' \| 'test' \| 'free', workoutId?, planned?, timeline, signatureId, signatureSnapshot, status: 'completed' \| 'aborted', summary }` | `id`, index på `startedAt` |
 | `chunks` | `{ sessionId, seq, strokes: StrokeSample[], status: StatusSample[], rawLog?: string[] }` | `[sessionId, seq]` |
 | `signatures` | `FitnessSignature` | `id`, index på `machine` |
 | `testResults` | `TestResult` (`{ id, sessionId, machine, duration, avgPower, date, dragFactor?, simulated? }`) | `id`, index på `[machine, duration]` |
 | `settings` | nyckel–värde | `key` |
+| `plannedWorkouts` | planerade pass från elitledet (§6.7) med `athlete` och `importedAt` | `id`, index på `date` |
 
 - **Autosparning:** Recordern skriver en chunk var 30:e sekund, så att högst 30 s data går förlorad om webbläsaren kraschar.
 - **Rådata först:** Spara alla tolkade fält per drag, även sådana som v1 inte använder. v2 ska kunna räkna fram trender och belastning bakåt i tiden.
 - **Inga härledda serier:** 1 Hz-effekt och W′-kurva räknas om från rådata när de behövs. `summary` får innehålla färdiga sammanfattningsvärden.
 - **Tidslinje och signatur:** Varje pass sparar en kopia av sin expanderade tidslinje och av den signatur som användes, så att gamla pass kan visas korrekt även efter att signaturen ändrats.
+- **Backup:** `plannedWorkouts` följer med. En backup från version 1 av databasen saknar den och går ändå att importera.
 
 ---
 

@@ -13,6 +13,7 @@ import type {
   SessionStatus,
   SessionStore,
 } from '../storage/types';
+import type { PlannedWorkout } from '../workout/plan';
 import type { TimelineSegment } from '../workout/schema';
 import { summarize } from './summary';
 
@@ -29,6 +30,7 @@ export interface StartOptions {
   mode: SessionMode;
   machine: Machine;
   workoutId?: string;
+  planned?: PlannedWorkout;
   timeline?: readonly TimelineSegment[] | null;
   signature?: FitnessSignature | null;
   /** Clock time of session t = 0; defaults to now. May be in the future (countdown). */
@@ -83,6 +85,7 @@ export class Recorder {
       source: source.kind,
       mode: opts.mode,
       ...(opts.workoutId !== undefined && { workoutId: opts.workoutId }),
+      ...(opts.planned !== undefined && { planned: opts.planned }),
       timeline: opts.timeline ? [...opts.timeline] : null,
       signatureId: signature?.id ?? null,
       signatureSnapshot: signature,

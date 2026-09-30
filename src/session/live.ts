@@ -9,6 +9,7 @@ import type { FitnessSignature } from '../model/signature';
 import { DEFAULT_WBAL, timeToEmpty, wbalStep, type WbalOptions } from '../model/wbal';
 import type { DataSource, Machine, StatusSample } from '../sources/DataSource';
 import type { Session, SessionMode, SessionStore } from '../storage/types';
+import type { PlannedWorkout } from '../workout/plan';
 import type { TimelineSegment } from '../workout/schema';
 import { WorkoutRunner } from '../workout/runner';
 import { Recorder } from './recorder';
@@ -26,6 +27,8 @@ export interface LiveSessionOptions {
   /** Machine recorded with the session; defaults to what the source reports, else SkiErg. */
   machine?: Machine;
   workoutId?: string;
+  /** The planned workout, when it came from an imported plan; saved with the session. */
+  planned?: PlannedWorkout;
   timeline: readonly TimelineSegment[] | null;
   signature: FitnessSignature | null;
   powerAvgStrokes?: number;
@@ -78,6 +81,7 @@ export class LiveSession {
       mode: this.opts.mode,
       machine: this.opts.machine ?? this.source.machine() ?? 'skierg',
       ...(this.opts.workoutId !== undefined && { workoutId: this.opts.workoutId }),
+      ...(this.opts.planned !== undefined && { planned: this.opts.planned }),
       timeline: this.opts.timeline,
       signature: this.opts.signature,
       startTs: zero,

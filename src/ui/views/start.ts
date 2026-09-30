@@ -3,17 +3,23 @@ import { Pm5Source } from '../../sources/pm5/ble';
 import { UsbPm5Source } from '../../sources/pm5/usb';
 import { DEFAULT_DRAG_FACTOR, Simulator, type SimMode } from '../../sources/simulator';
 import { previousTest } from '../../session/testResults';
-import { kOf } from '../../model/signature';
+import { kOf, validateSignature } from '../../model/signature';
 import { BUILTIN_WORKOUTS, TEST_WORKOUTS } from '../../workout/builtin';
 import { expand, totalDuration } from '../../workout/expand';
 import { calibrate } from '../../workout/calibrate';
-import { maxEffortDuration } from '../../workout/schema';
+import { isPlanned, localDate, parsePlan, plannedForList, type PlannedWorkout } from '../../workout/plan';
+import { isStructured, maxEffortDuration, type Workout } from '../../workout/schema';
 import { calibrationOptions } from '../../storage/settings';
 import type { FitnessSignature } from '../../model/signature';
 import type { View } from '../app';
 import { debugPanel } from '../debugPanel';
 import { h } from '../dom';
-import { formatDate, formatDuration, formatPower } from '../format';
+import { formatDate, formatDay, formatDuration, formatPower } from '../format';
+import { outline } from '../outline';
+
+/** [FÖRSLAG] The plan's CP and W′ count as different from the active signature beyond these shares. */
+const PLAN_CP_TOLERANCE = 0.03;
+const PLAN_WPRIME_TOLERANCE = 0.1;
 
 export const startView: View = (root, app) => {
   const status = h('p', { class: 'status' });
@@ -104,13 +110,19 @@ export const startView: View = (root, app) => {
   };
   const updatePlan = (): void => {
     void updateTestInfo();
+    updatePlannedInfo();
     const w = app.workout;
     const sig = signature;
-    planInfo.hidden = !w || !sig || maxEffortDuration(w) !== null;
+    planInfo.hidden = !w || !sig || !isStructured(w) || maxEffortDuration(w) !== null;
     if (!w || !sig || planInfo.hidden) return;
     const planned = expand(w, sig, app.settings.tolerance);
-    const c = calibrate(planned, sig, calibrationOptions(app.settings));
-    const peak = (t: typeof planned) => Math.max(0, ...t.filter((s) => s.targetW !== null && s.targetW > sig.cp).map((s) => Math.round(s.targetW!)));
+    const c = calibrate(planned, sig, calibrationOptions(app.settings, isPlanned(w) ? w.calibration : undefined));
+    // The work is the intervals when there are any, so pickups in a planned warm-up do not count.
+    const peak = (t: typeof planned) => {
+      const above = t.filter((s) => s.targetW !== null && s.targetW > sig.cp);
+      const work = above.some((s) => s.kind === 'interval') ? above.filter((s) => s.kind === 'interval') : above;
+      return Math.max(0, ...work.map((s) => Math.round(s.targetW!)));
+    };
     const pct = (f: number) => `${Math.round(Math.max(0, f) * 100)} %`;
     if (peak(planned) === 0) planInfo.textContent = 'Passet ligger under CP – W′ förbrukas inte.';
     else if (c.scale === 1) planInfo.textContent = `Arbete ${peak(c.timeline)} W · beräknat lägsta W′ ${pct(c.minWbal.fraction)}`;
@@ -120,7 +132,8 @@ export const startView: View = (root, app) => {
         ` (utan justering ${pct(c.before.fraction)})`;
     }
   };
-  const asChoice = (w: (typeof BUILTIN_WORKOUTS)[number]) => ({ id: w.id, label: w.name, detail: formatDuration(totalDuration(expand(w, null))), workout: w });
+  const lengthText = (w: Workout): string => (isStructured(w) ? formatDuration(totalDuration(expand(w, null))) : 'ostrukturerat');
+  const asChoice = (w: Workout) => ({ id: w.id, label: w.name, detail: lengthText(w), workout: w as Workout | null });
   const choices = [{ id: 'free', label: 'Fri åkning', detail: 'ingen tidslinje', workout: null }, ...BUILTIN_WORKOUTS.map(asChoice)];
   const testChoices = TEST_WORKOUTS.map(asChoice);
   const radio = (c: (typeof choices)[number]) => {
@@ -131,9 +144,127 @@ export const startView: View = (root, app) => {
     });
     return h('label', { class: 'choice' }, input, ` ${c.label} `, h('span', { class: 'hint' }, `· ${c.detail}`));
   };
+
+  // Planned workouts from elitledet (plan.md §4.1, spec §6.7): imported from a file, listed first.
+  const plannedList = h('div', {});
+  const plannedStatus = h('p', { class: 'hint small', hidden: true });
+  const plannedInfo = h('div', { class: 'planned-info', hidden: true });
+  const planFile = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
+  const importPlan = h('button', { class: 'secondary' }, 'Importera plan…');
+  importPlan.addEventListener('click', () => planFile.click());
+  let planned: PlannedWorkout[] = [];
+  let completed = new Set<string>();
+  const showPlannedStatus = (text: string, isError = false): void => {
+    plannedStatus.textContent = text;
+    plannedStatus.className = isError ? 'error' : 'hint small';
+    plannedStatus.hidden = false;
+  };
+  const loadPlanned = async (): Promise<void> => {
+    const today = localDate();
+    const [all, sessions] = await Promise.all([app.store.listPlannedWorkouts(), app.store.listSessions()]);
+    completed = new Set(sessions.filter((s) => s.planned && s.status === 'completed').map((s) => s.planned!.id));
+    planned = plannedForList(all, today);
+    // Keep the choice in step with the stored copy (replaced by a new import, or deleted).
+    if (isPlanned(app.workout)) {
+      const id = app.workout.id;
+      app.workout = all.find((w) => w.id === id) ?? null;
+      if (!app.workout) (workoutList.querySelector('input[value="free"]') as HTMLInputElement | null)?.click();
+    }
+    plannedList.replaceChildren(
+      ...(planned.length === 0
+        ? [h('p', { class: 'hint small' }, 'Inga planerade pass. Importera veckans fil från elitledet.')]
+        : planned.map((w) => radio({ id: w.id, label: `${formatDay(w.date, today)} · ${w.name}${completed.has(w.id) ? ' ✓' : ''}`, detail: lengthText(w), workout: w }))),
+    );
+    updatePlan();
+  };
+  planFile.addEventListener('change', async () => {
+    const file = planFile.files?.[0];
+    planFile.value = '';
+    if (!file) return;
+    try {
+      let json: unknown;
+      try {
+        json = JSON.parse(await file.text());
+      } catch {
+        throw new Error('Filen är inte giltig JSON.');
+      }
+      const plan = parsePlan(json);
+      const existing = new Set((await app.store.listPlannedWorkouts()).map((w) => w.id));
+      await app.store.putPlannedWorkouts(plan.workouts);
+      const replaced = plan.workouts.filter((w) => existing.has(w.id)).length;
+      showPlannedStatus(`Importerade ${plan.workouts.length} pass från ${file.name}${replaced > 0 ? ` (${replaced} ersatte tidigare versioner)` : ''}.`);
+      await loadPlanned();
+    } catch (err) {
+      showPlannedStatus(`Planen importerades inte. ${err instanceof Error ? err.message : String(err)}`, true);
+    }
+  });
+
+  /** Details for a chosen planned workout: description, structure, the coach's athlete values. */
+  function updatePlannedInfo(): void {
+    const w = app.workout;
+    plannedInfo.hidden = !isPlanned(w);
+    if (!isPlanned(w)) return;
+    const a = w.athlete;
+    const sig = signature;
+    const lines = outline(w.segments);
+    const nodes: (HTMLElement | null)[] = [
+      h('h3', {}, w.name),
+      h('p', { class: 'hint' }, `${formatDay(w.date, localDate())} · ${isStructured(w) ? formatDuration(totalDuration(expand(w, null))) : 'ostrukturerat – körs som fri åkning med beskrivningen'}${completed.has(w.id) ? ' · genomfört' : ''}`),
+      w.description ? h('p', { class: 'description' }, w.description) : null,
+      lines.length > 0
+        ? h(
+            'ul',
+            { class: 'outline' },
+            ...lines.map((l) => h('li', { style: `margin-left: ${l.depth * 1.25}rem` }, l.text, l.description ? h('div', { class: 'hint small description' }, l.description) : null)),
+          )
+        : null,
+      w.calibration
+        ? h('p', { class: 'hint small' }, w.calibration.mode === 'off' ? 'Planen anger målen som de står (ingen anpassning till W′).' : `Planen anger lägsta W′ ${Math.round((w.calibration.minWbal ?? app.settings.minWbal) * 100)} % (${w.calibration.mode === 'fit' ? 'landa på nivån' : 'sänk bara'}).`)
+        : null,
+      a ? h('p', { class: 'hint small' }, athleteText(a)) : null,
+    ];
+    // The plan's signature against the active one (only for a real PM5; the simulator has its own).
+    if (a && sig && !sig.simulated && sig.id !== 'simulator-default') {
+      if (sig.id === 'pm5-default' && a.pp !== undefined && a.cp !== undefined && a.wPrime !== undefined && validateSignature({ pp: a.pp, cp: a.cp, wPrime: a.wPrime }) === null) {
+        const use = h('button', { class: 'secondary' }, `Använd planens signatur (CP ${Math.round(a.cp)} W)`);
+        use.addEventListener('click', async () => {
+          await app.store.putSignature({ id: crypto.randomUUID(), machine: app.machine(), pp: a.pp!, cp: a.cp!, wPrime: a.wPrime!, createdAt: new Date().toISOString(), source: 'manual' });
+          await loadSignature();
+        });
+        nodes.push(h('p', { class: 'hint warn' }, 'Aktiv signatur är standardvärden. Planen har egna värden för PP, CP och W′.'), h('div', { class: 'row' }, use));
+      } else if (sig.id !== 'pm5-default') {
+        const cpDiffers = a.cp !== undefined && Math.abs(a.cp - sig.cp) / sig.cp > PLAN_CP_TOLERANCE;
+        const wDiffers = a.wPrime !== undefined && Math.abs(a.wPrime - sig.wPrime) / sig.wPrime > PLAN_WPRIME_TOLERANCE;
+        if (cpDiffers || wDiffers) {
+          const planText = [a.cp !== undefined && `CP ${Math.round(a.cp)} W`, a.wPrime !== undefined && `W′ ${Math.round(a.wPrime).toLocaleString('sv-SE')} J`].filter(Boolean).join(' och ');
+          nodes.push(
+            h(
+              'p',
+              { class: 'hint warn' },
+              `Planen skrevs med ${planText}, men aktiv signatur har CP ${Math.round(sig.cp)} W och W′ ${Math.round(sig.wPrime).toLocaleString('sv-SE')} J. Watten räknas från den aktiva signaturen.`,
+            ),
+          );
+        }
+      }
+    }
+    const remove = h('button', { class: 'link' }, 'Ta bort från listan');
+    remove.addEventListener('click', async () => {
+      if (!confirm(`Ta bort "${w.name}" från planerade pass? Genomförda pass påverkas inte.`)) return;
+      await app.store.deletePlannedWorkout(w.id);
+      await loadPlanned();
+    });
+    nodes.push(remove);
+    plannedInfo.replaceChildren(...nodes.filter((n): n is HTMLElement => n !== null));
+  }
+
   const workoutList = h(
     'div',
     { class: 'choices' },
+    h('div', { class: 'choice-group' }, 'Planerade pass'),
+    plannedList,
+    h('div', { class: 'row small' }, importPlan, planFile),
+    plannedStatus,
+    h('div', { class: 'choice-group' }, 'Standardpass'),
     ...choices.map(radio),
     h('div', { class: 'choice-group' }, 'Testbatteri'),
     h(
@@ -194,7 +325,7 @@ export const startView: View = (root, app) => {
       error,
     ),
     h('section', { class: 'card' }, h('h2', {}, 'Signatur'), signatureText),
-    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, planInfo, testInfo, start),
+    h('section', { class: 'card' }, h('h2', {}, 'Pass'), workoutList, plannedInfo, planInfo, testInfo, start),
     h(
       'nav',
       { class: 'row' },
@@ -204,8 +335,25 @@ export const startView: View = (root, app) => {
     debug.el,
   );
   update();
+  void loadPlanned();
   return () => {
     off();
     debug.cleanup();
   };
 };
+
+/** "Från planen: maxpuls 188 · tröskelpuls 168 · … (2026-10-05)". */
+function athleteText(a: NonNullable<PlannedWorkout['athlete']>): string {
+  const n = (v: number) => Math.round(v).toLocaleString('sv-SE');
+  const parts = [
+    a.maxHR !== undefined && `maxpuls ${n(a.maxHR)}`,
+    a.thresholdHR !== undefined && `tröskelpuls ${n(a.thresholdHR)}`,
+    a.restingHR !== undefined && `vilopuls ${n(a.restingHR)}`,
+    a.pp !== undefined && `PP ${n(a.pp)} W`,
+    a.cp !== undefined && `CP ${n(a.cp)} W`,
+    a.wPrime !== undefined && `W′ ${n(a.wPrime)} J`,
+    a.dragFactor !== undefined && `dragfaktor ${n(a.dragFactor)}`,
+    a.weight !== undefined && `${a.weight.toLocaleString('sv-SE', { maximumFractionDigits: 1 })} kg`,
+  ].filter(Boolean);
+  return `Från planen: ${parts.length > 0 ? parts.join(' · ') : 'inga värden'}${a.asOf ? ` (${a.asOf})` : ''}`;
+}

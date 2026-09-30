@@ -1,7 +1,10 @@
 // Backup of the whole database as JSON (spec §11, §8.5).
 
-export const STORE_NAMES = ['sessions', 'chunks', 'signatures', 'testResults', 'settings'] as const;
+export const STORE_NAMES = ['sessions', 'chunks', 'signatures', 'testResults', 'settings', 'plannedWorkouts'] as const;
 export type StoreName = (typeof STORE_NAMES)[number];
+
+/** Stores added after the first version (dbVersion 2: planned workouts). Older backups lack them. */
+const LATER_STORES: readonly StoreName[] = ['plannedWorkouts'];
 
 export interface BackupFile {
   format: 'skierg-backup';
@@ -30,8 +33,11 @@ export function parseBackup(json: unknown): BackupFile {
   const f = json as Partial<BackupFile> | null;
   if (!f || f.format !== 'skierg-backup') throw new Error('Filen är ingen backup från SkiErg Training.');
   if (f.version !== 1) throw new Error(`Backupversion ${String(f.version)} stöds inte.`);
-  if (!f.stores || !STORE_NAMES.every((n) => Array.isArray(f.stores![n]))) throw new Error('Backupen saknar data.');
-  return f as BackupFile;
+  const stores = f.stores as Partial<Record<StoreName, unknown>> | undefined;
+  const present = (n: StoreName) => Array.isArray(stores?.[n]) || (LATER_STORES.includes(n) && stores?.[n] === undefined);
+  if (!stores || !STORE_NAMES.every(present)) throw new Error('Backupen saknar data.');
+  const filled = Object.fromEntries(STORE_NAMES.map((n) => [n, (stores[n] as unknown[] | undefined) ?? []])) as Record<StoreName, unknown[]>;
+  return { ...(f as BackupFile), stores: filled };
 }
 
 /** Writes every record from the backup. Existing records with the same key are replaced. Returns counts. */
