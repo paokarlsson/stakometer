@@ -19,3 +19,9 @@ export function formatPower(watts: number | null | undefined): string {
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
 }
+
+/** "Idag", or e.g. "ons 8 okt." for a YYYY-MM-DD date. */
+export function formatDay(date: string, today: string): string {
+  if (date === today) return 'Idag';
+  return new Date(`${date}T12:00:00`).toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' });
+}

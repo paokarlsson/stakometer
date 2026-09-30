@@ -5,7 +5,8 @@ import { dragFactorDiffers, previousTest } from '../../session/testResults';
 import type { TestResult } from '../../storage/types';
 import { MANUAL_STEP_W } from '../../sources/simulator';
 import { expand, highestTarget } from '../../workout/expand';
-import { maxEffortDuration } from '../../workout/schema';
+import { heartRateShare, isPlanned } from '../../workout/plan';
+import { isStructured, maxEffortDuration } from '../../workout/schema';
 import { calibrationOptions, wbalOptions } from '../../storage/settings';
 import { calibrate } from '../../workout/calibrate';
 import { beepsDue } from '../../workout/runner';
@@ -13,6 +14,9 @@ import type { View } from '../app';
 import { h } from '../dom';
 import { formatDuration, formatPower } from '../format';
 import { LiveChart, yMaxFor } from '../live/canvas';
+
+/** [FÖRSLAG] How long into a planned workout a drag factor unlike the plan's is pointed out, s. */
+const PLAN_DRAG_CHECK_S = 180;
 
 export const liveView: View = (root, app) => {
   const source = app.source;
@@ -22,7 +26,10 @@ export const liveView: View = (root, app) => {
     return () => {};
   }
   const workout = app.workout;
-  const isTest = workout !== null && maxEffortDuration(workout) !== null;
+  // An unstructured planned workout has no timeline and runs like free ride with its description.
+  const structured = workout !== null && isStructured(workout);
+  const isTest = structured && maxEffortDuration(workout) !== null;
+  const planned = isPlanned(workout) ? workout : null;
   const settings = app.settings;
 
   // --- DOM ---
@@ -37,8 +44,11 @@ export const liveView: View = (root, app) => {
   // Before the maximal effort: a drag factor unlike the last test of the same length (spec §7.3).
   const dragBanner = h('p', { class: 'banner', hidden: true });
 
-  const segLabel = h('div', { class: 'seg-label' }, workout ? '' : 'Fri åkning');
+  const segBlock = h('div', { class: 'seg-block', hidden: true });
+  const segLabel = h('div', { class: 'seg-label' }, workout ? (structured ? '' : workout.name) : 'Fri åkning');
   const segLeft = h('div', { class: 'seg-left' }, '–');
+  // The segment's description from the plan, or the workout's before the start and without a timeline.
+  const segDesc = h('div', { class: 'seg-desc', hidden: true });
   const segNext = h('div', { class: 'hint' });
 
   const batteryFill = h('div', { class: 'battery-fill' });
@@ -56,6 +66,8 @@ export const liveView: View = (root, app) => {
   const mpaMetric = metric('MPA');
   const empty = metric('Tid till tomt W′');
   const elapsed = metric('Tid');
+  const hrShare = h('div', { class: 'hint small' });
+  heartRate.el.append(hrShare);
   heartRate.el.hidden = true;
   empty.el.hidden = true;
 
@@ -77,7 +89,7 @@ export const liveView: View = (root, app) => {
       h(
         'aside',
         { class: 'live-side' },
-        h('div', { class: 'segment' }, segLabel, segLeft, segNext),
+        h('div', { class: 'segment' }, segBlock, segLabel, segLeft, segDesc, segNext),
         battery,
         h('div', { class: 'side-metrics' }, power.el, rate.el, heartRate.el, mpaMetric.el, empty.el, elapsed.el),
         h('div', { class: 'row' }, pauseBtn, stopBtn, fullscreenBtn),
@@ -136,16 +148,29 @@ export const liveView: View = (root, app) => {
       maxAvg.textContent = avg === null ? '–' : `snitt ${Math.round(avg)} W`;
     }
     pausedBanner.hidden = runner.state !== 'paused';
+    // Drag factor: against the last test of the same length before a maximal effort (spec §7.3),
+    // else against the plan's during the first minutes, while there is time to set the damper.
     const df = l.dragFactor();
-    dragBanner.hidden = !(previous?.dragFactor !== undefined && df !== null && l.maxEffortAverage() === null && dragFactorDiffers(df, previous.dragFactor));
+    const refDf = previous?.dragFactor ?? planned?.athlete?.dragFactor;
+    const beforeMain = isTest ? l.maxEffortAverage() === null : t < PLAN_DRAG_CHECK_S;
+    dragBanner.hidden = !(refDf !== undefined && df !== null && beforeMain && dragFactorDiffers(df, refDf));
     if (!dragBanner.hidden) {
-      dragBanner.textContent = `Dragfaktor ${df} – förra testet gjordes med ${previous!.dragFactor}. Ställ dämparen så att den blir densamma.`;
+      dragBanner.textContent =
+        previous?.dragFactor !== undefined
+          ? `Dragfaktor ${df} – förra testet gjordes med ${refDf}. Ställ dämparen så att den blir densamma.`
+          : `Dragfaktor ${df} – planen är skriven för ${refDf}. Ställ dämparen så att den blir densamma.`;
     }
     pauseBtn.textContent = runner.state === 'paused' ? 'Fortsätt' : 'Paus';
     pauseBtn.disabled = runner.state !== 'running' && runner.state !== 'paused';
 
     // Segment and beeps (spec §6.3)
     const cur = runner.current();
+    // Before the start (and without a timeline) the workout's description, then the segment's.
+    const description = runner.state === 'countdown' || !cur ? (workout?.description ?? cur?.segment.description) : cur.segment.description;
+    segDesc.hidden = !description;
+    segDesc.textContent = description ?? '';
+    segBlock.hidden = !cur?.segment.block;
+    segBlock.textContent = cur?.segment.block ?? '';
     if (cur) {
       segLabel.textContent = cur.segment.label;
       segLeft.textContent = formatDuration(Math.ceil(cur.remaining));
@@ -181,7 +206,11 @@ export const liveView: View = (root, app) => {
     rate.value.textContent = sr ? String(Math.round(sr)) : '–';
     const hr = l.heartRate();
     heartRate.el.hidden = hr === null;
-    if (hr !== null) heartRate.value.textContent = String(hr);
+    if (hr !== null) {
+      heartRate.value.textContent = String(hr);
+      const share = heartRateShare(hr, planned?.athlete);
+      hrShare.textContent = share ? `${Math.round(share.fraction * 100)} % av ${share.of === 'threshold' ? 'tröskelpuls' : 'maxpuls'}` : '';
+    }
     const m = l.mpa();
     mpaMetric.el.hidden = m === null;
     if (m !== null) mpaMetric.value.textContent = formatPower(m);
@@ -254,15 +283,16 @@ export const liveView: View = (root, app) => {
     const signature = await app.activeSignature();
     const maxDuration = workout ? maxEffortDuration(workout) : null;
     if (maxDuration !== null) previous = previousTest(await app.store.listTestResults(app.machine()), maxDuration, source.kind === 'simulator');
-    let timeline = workout ? expand(workout, signature, settings.tolerance) : null;
-    // Fit the intensity so the planned W′ lands on the minimum in settings (not for tests).
-    if (timeline && signature && !isTest) timeline = calibrate(timeline, signature, calibrationOptions(settings)).timeline;
+    let timeline = workout && structured ? expand(workout, signature, settings.tolerance) : null;
+    // Fit the intensity so the planned W′ lands on the minimum in settings or the plan (not for tests).
+    if (timeline && signature && !isTest) timeline = calibrate(timeline, signature, calibrationOptions(settings, planned?.calibration)).timeline;
     live = new LiveSession(source, clock, app.store, {
-      mode: isTest ? 'test' : workout ? 'workout' : 'free',
+      mode: isTest ? 'test' : structured ? 'workout' : 'free',
       machine: app.machine(),
       powerAvgStrokes: settings.powerAvgStrokes,
       wbal: wbalOptions(settings),
       ...(workout && { workoutId: workout.id }),
+      ...(planned && { planned }),
       timeline,
       signature,
     });

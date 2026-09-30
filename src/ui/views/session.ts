@@ -41,7 +41,7 @@ export const sessionView: View = (root, app) => {
     const analysis = analyzeSession(session, chunks, wbalOptions(app.settings));
     // Recomputed from raw data, so sessions saved by older versions show every value too.
     const s = summarize(chunks, session.signatureSnapshot, wbalOptions(app.settings));
-    const title = workoutById(session.workoutId)?.name ?? (session.mode === 'free' ? 'Fri åkning' : 'Pass');
+    const title = session.planned?.name ?? workoutById(session.workoutId)?.name ?? (session.mode === 'free' ? 'Fri åkning' : 'Pass');
 
     const stat = (label: string, value: string) => h('div', { class: 'metric' }, h('div', { class: 'label' }, label), h('div', { class: 'value small-value' }, value));
     const chartEl = h('div', { class: 'chart-box' });
@@ -60,7 +60,7 @@ export const sessionView: View = (root, app) => {
                 h(
                   'tr',
                   {},
-                  h('td', {}, x.segment.label),
+                  h('td', {}, x.segment.block ? `${x.segment.block} · ${x.segment.label}` : x.segment.label),
                   h('td', { class: 'num' }, x.segment.isMax ? 'MAX' : formatPower(x.segment.targetW)),
                   h('td', { class: 'num' }, formatPower(x.avgPower)),
                   h('td', { class: 'num' }, x.inBand === null ? '–' : pct(x.inBand)),
@@ -72,7 +72,8 @@ export const sessionView: View = (root, app) => {
 
     body.replaceChildren(
       h('h1', {}, title),
-      h('p', { class: 'hint' }, `${formatDate(session.startedAt)} · ${session.source === 'pm5' ? 'PM5' : 'Simulator'} · ${session.status === 'completed' ? 'Klart' : 'Avbrutet'}`),
+      h('p', { class: 'hint' }, `${formatDate(session.startedAt)} · ${session.source === 'pm5' ? 'PM5' : 'Simulator'} · ${session.status === 'completed' ? 'Klart' : 'Avbrutet'}${session.planned ? ` · planerat ${session.planned.date}` : ''}`),
+      ...(session.planned?.description ? [h('p', { class: 'description' }, session.planned.description)] : []),
       h(
         'div',
         { class: 'metrics' },

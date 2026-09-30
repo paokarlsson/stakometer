@@ -1,11 +1,13 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { FitnessSignature } from '../model/signature';
 import type { Machine } from '../sources/DataSource';
+import type { PlannedWorkout } from '../workout/plan';
 import type { BackupTarget, StoreName } from './backup';
 import type { Chunk, Session, SessionStore, TestResult } from './types';
 
 export const DB_NAME = 'skierg-training';
-export const DB_VERSION = 1;
+/** 2 added `plannedWorkouts` (plan.md §4.1). */
+export const DB_VERSION = 2;
 
 interface Schema extends DBSchema {
   sessions: { key: string; value: Session; indexes: { startedAt: string } };
@@ -13,18 +15,22 @@ interface Schema extends DBSchema {
   signatures: { key: string; value: FitnessSignature; indexes: { machine: Machine } };
   testResults: { key: string; value: TestResult; indexes: { machineDuration: [Machine, number] } };
   settings: { key: string; value: { key: string; value: unknown } };
+  plannedWorkouts: { key: string; value: PlannedWorkout; indexes: { date: string } };
 }
 
 export type Db = IDBPDatabase<Schema>;
 
 export function openDb(name = DB_NAME): Promise<Db> {
   return openDB<Schema>(name, DB_VERSION, {
-    upgrade(db) {
-      db.createObjectStore('sessions', { keyPath: 'id' }).createIndex('startedAt', 'startedAt');
-      db.createObjectStore('chunks', { keyPath: ['sessionId', 'seq'] });
-      db.createObjectStore('signatures', { keyPath: 'id' }).createIndex('machine', 'machine');
-      db.createObjectStore('testResults', { keyPath: 'id' }).createIndex('machineDuration', ['machine', 'duration']);
-      db.createObjectStore('settings', { keyPath: 'key' });
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
+        db.createObjectStore('sessions', { keyPath: 'id' }).createIndex('startedAt', 'startedAt');
+        db.createObjectStore('chunks', { keyPath: ['sessionId', 'seq'] });
+        db.createObjectStore('signatures', { keyPath: 'id' }).createIndex('machine', 'machine');
+        db.createObjectStore('testResults', { keyPath: 'id' }).createIndex('machineDuration', ['machine', 'duration']);
+        db.createObjectStore('settings', { keyPath: 'key' });
+      }
+      if (oldVersion < 2) db.createObjectStore('plannedWorkouts', { keyPath: 'id' }).createIndex('date', 'date');
     },
   });
 }
@@ -73,6 +79,20 @@ export class IdbStore implements SessionStore, BackupTarget {
 
   listTestResults(machine: Machine): Promise<TestResult[]> {
     return this.db.getAll('testResults').then((all) => all.filter((r) => r.machine === machine));
+  }
+
+  /** Adds or replaces planned workouts by id, all or nothing. */
+  async putPlannedWorkouts(workouts: readonly PlannedWorkout[]): Promise<void> {
+    const tx = this.db.transaction('plannedWorkouts', 'readwrite');
+    await Promise.all([...workouts.map((w) => tx.store.put(w)), tx.done]);
+  }
+
+  listPlannedWorkouts(): Promise<PlannedWorkout[]> {
+    return this.db.getAllFromIndex('plannedWorkouts', 'date');
+  }
+
+  async deletePlannedWorkout(id: string): Promise<void> {
+    await this.db.delete('plannedWorkouts', id);
   }
 
   getSettingRecords(): Promise<{ key: string; value: unknown }[]> {

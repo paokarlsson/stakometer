@@ -6,7 +6,7 @@ import { formatDate, formatDistance, formatDuration, formatPower } from '../form
 
 const MODE_LABEL: Record<Session['mode'], string> = { free: 'Fri åkning', workout: 'Pass', test: 'Test' };
 
-const workoutLabel = (s: Session): string => workoutById(s.workoutId)?.name ?? MODE_LABEL[s.mode];
+const workoutLabel = (s: Session): string => s.planned?.name ?? workoutById(s.workoutId)?.name ?? MODE_LABEL[s.mode];
 
 const COLUMNS = ['Datum', 'Pass', 'Tid', 'Distans', 'Medeleffekt', 'Lägsta W′', 'Källa', 'Status'];
 

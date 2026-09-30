@@ -31,8 +31,13 @@ describe('backup (§11)', () => {
     const target = new MemoryDb();
     const counts = await importBackup(target, parseBackup(json));
 
-    expect(counts).toEqual({ sessions: 2, chunks: 2, signatures: 1, testResults: 1, settings: settingsToRecords(DEFAULT_SETTINGS).length });
+    expect(counts).toEqual({ sessions: 2, chunks: 2, signatures: 1, testResults: 1, settings: settingsToRecords(DEFAULT_SETTINGS).length, plannedWorkouts: 0 });
     for (const name of STORE_NAMES) expect(await target.readAll(name)).toEqual(await source.readAll(name));
+  });
+
+  it('reads backups from before planned workouts were stored (dbVersion 1)', () => {
+    const old = { format: 'skierg-backup', version: 1, dbVersion: 1, exportedAt: '2026-09-24T12:00:00Z', stores: { sessions: [], chunks: [], signatures: [], testResults: [], settings: [] } };
+    expect(parseBackup(old).stores.plannedWorkouts).toEqual([]);
   });
 
   it('rejects files that are not backups', () => {
