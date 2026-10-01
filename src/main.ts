@@ -1,14 +1,19 @@
 import { recoverUnfinished } from './session/recorder';
 import { IdbStore } from './storage/db';
 import { App, type Cleanup, type View, type ViewName } from './ui/app';
+import { tickWallClocks } from './ui/components';
 import { historyView } from './ui/views/history';
 import { liveView } from './ui/views/live';
 import { sessionView } from './ui/views/session';
 import { settingsView } from './ui/views/settings';
 import { startView } from './ui/views/start';
+import { workoutView } from './ui/views/workout';
+import { workoutsView } from './ui/views/workouts';
 
 const views: Record<ViewName, View> = {
   start: startView,
+  workouts: workoutsView,
+  workout: workoutView,
   live: liveView,
   history: historyView,
   session: sessionView,
@@ -27,10 +32,12 @@ async function main(): Promise<void> {
   const app = new App(store, (name) => {
     cleanup();
     root.replaceChildren();
+    root.dataset.view = name;
     window.scrollTo(0, 0);
     cleanup = views[name](root, app);
   });
   await app.loadSettings();
+  setInterval(tickWallClocks, 5000);
   app.navigate('start');
 
   // USB is the default: connect automatically when a permitted PM is (or gets) plugged in.

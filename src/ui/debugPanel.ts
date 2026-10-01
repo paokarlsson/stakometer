@@ -1,5 +1,6 @@
 import type { RawLogEntry } from '../sources/rawlog';
 import type { App, Cleanup } from './app';
+import { downloadJson } from './components';
 import { h } from './dom';
 
 const SHOWN_LINES = 40;
@@ -44,10 +45,7 @@ export function debugPanel(app: App): { el: HTMLElement; cleanup: Cleanup } {
   });
   download.addEventListener('click', () => {
     const file = app.rawLog.toFile();
-    const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
-    const a = h('a', { href: url, download: `skierg-rawlog-${file.recordedAt.replace(/[:.]/g, '-')}.json` });
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadJson(file, `skierg-rawlog-${file.recordedAt.replace(/[:.]/g, '-')}.json`);
   });
   const off = app.rawLog.added.on(schedule);
 

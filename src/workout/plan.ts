@@ -143,3 +143,21 @@ export function heartRateShare(hr: number, athlete: Athlete | undefined): { frac
   if (athlete?.maxHR) return { fraction: hr / athlete.maxHR, of: 'max' };
   return null;
 }
+
+/** Monday of the week containing `date` (YYYY-MM-DD). */
+export function weekStart(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Ids of the planned workouts with a completed session, marked ✓ in the lists (spec §6.7). */
+export function completedPlanIds(sessions: readonly { planned?: { id: string }; status: string }[]): Set<string> {
+  return new Set(sessions.flatMap((s) => (s.planned && s.status === 'completed' ? [s.planned.id] : [])));
+}
+
+/** For the start page: today's first workout not yet done (else today's first), otherwise the next upcoming one. */
+export function featuredPlanned(list: readonly PlannedWorkout[], today: string, completed: ReadonlySet<string>): PlannedWorkout | undefined {
+  const todays = list.filter((w) => w.date === today);
+  return todays.find((w) => !completed.has(w.id)) ?? todays[0] ?? list.find((w) => w.date > today);
+}

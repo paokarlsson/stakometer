@@ -1,13 +1,14 @@
 // Live chart (spec §8.2): session time on x from now − 60 s to now + 60 s, power on y.
 // Drawn for reading at 2–3 m: large text, thick lines, labelled reference lines.
+// The legend and the axis title are HTML above the canvas (live view).
 import type { LivePoint, LiveSession } from '../../session/live';
 import { formatDuration } from '../format';
 
 export const WINDOW_S = 60;
 const COLUMN_PX = 2;
-const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+export const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
-interface Theme {
+export interface Theme {
   bg: string;
   future: string;
   grid: string;
@@ -24,7 +25,7 @@ interface Theme {
   cp: string;
 }
 
-function readTheme(el: Element): Theme {
+export function readTheme(el: Element): Theme {
   const css = getComputedStyle(el);
   const v = (name: string) => css.getPropertyValue(name).trim();
   return {
@@ -160,9 +161,6 @@ export class LiveChart {
       ctx.fillStyle = theme.muted;
       ctx.fillText(String(p), this.pad.left - 8, y);
     }
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('W', 8, 8);
   }
 
   private drawTimeAxis(t0: number, now: number): void {
@@ -174,7 +172,7 @@ export class LiveChart {
     for (const d of [-60, -30, 0, 30, 60]) {
       const x = this.x(now + d, t0);
       ctx.textAlign = d === -60 ? 'left' : d === 60 ? 'right' : 'center';
-      ctx.fillText(d === 0 ? 'nu' : `${d > 0 ? '+' : '−'}${Math.abs(d)} s`, x, y);
+      ctx.fillText(d === 0 ? 'Nu' : `${d > 0 ? '+' : '−'}${Math.abs(d)} s`, x, y);
     }
   }
 
@@ -283,8 +281,8 @@ export class LiveChart {
       ctx.lineTo(xNow, y - 10);
       ctx.closePath();
       ctx.fill();
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`MPA ${Math.round(current)} W`, xNow - 14, y);
+      ctx.textBaseline = 'top';
+      ctx.fillText(`MPA ${Math.round(current)} W`, xNow - 14, y + 6);
     } else {
       ctx.textBaseline = 'bottom';
       ctx.fillText(`MPA ${Math.round(current)}`, xNow - 10, this.y(current) - 4);
@@ -302,7 +300,7 @@ export class LiveChart {
       if (!band) return theme.neutral;
       return p.value < band.lo ? theme.below : p.value > band.hi ? theme.above : theme.inBand;
     };
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 4;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.setLineDash([]);

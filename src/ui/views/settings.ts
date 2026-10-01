@@ -7,6 +7,8 @@ import type { WbalModel } from '../../model/wbal';
 import type { CalibrationMode } from '../../workout/calibrate';
 import { validateSettings, type Settings } from '../../storage/settings';
 import type { View } from '../app';
+import { downloadJson, pageHeader } from '../components';
+import { debugPanel } from '../debugPanel';
 import { h } from '../dom';
 import { formatDate } from '../format';
 
@@ -31,7 +33,8 @@ const MACHINE_LABEL: Record<Settings['machine'], string> = {
 
 export const settingsView: View = (root, app) => {
   const numberInput = (value: number, step = 'any') => h('input', { type: 'number', step, value: String(value), inputmode: 'decimal' });
-  const field = (label: string, input: HTMLElement, unit = '') => h('label', { class: 'field' }, h('span', {}, label), input, unit && h('span', { class: 'hint' }, unit));
+  const field = (label: string, input: HTMLElement, unit = '') =>
+    h('label', { class: 'field' }, h('span', {}, label), h('span', { class: 'field-input' }, input, unit && h('span', { class: 'hint' }, unit)));
 
   // --- Signature (§7.4) ---
   const machine: Machine = app.settings.machine === 'auto' ? 'skierg' : app.settings.machine;
@@ -125,9 +128,7 @@ export const settingsView: View = (root, app) => {
   const exportBtn = h('button', { class: 'secondary' }, 'Exportera (JSON)');
   exportBtn.addEventListener('click', async () => {
     const file = await exportBackup(app.store);
-    const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
-    h('a', { href: url, download: `skierg-backup-${file.exportedAt.slice(0, 10)}.json` }).click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadJson(file, `skierg-backup-${file.exportedAt.slice(0, 10)}.json`);
     backupStatus.textContent = `Exporterade ${file.stores.sessions.length} pass.`;
   });
   const fileInput = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
@@ -148,13 +149,13 @@ export const settingsView: View = (root, app) => {
     }
   });
 
+  const debug = debugPanel(app);
   root.append(
-    h('nav', {}, h('button', { class: 'link', onclick: () => app.navigate('start') }, '← Start')),
-    h('h1', {}, 'Inställningar'),
+    pageHeader({ title: 'Inställningar', onBack: () => app.navigate('start') }),
     h(
       'section',
       { class: 'card' },
-      h('h2', {}, 'Signatur'),
+      h('h2', {}, 'Fitness Signature'),
       current,
       h('div', { class: 'fields' }, field('PP', pp, 'W'), field('CP', cp, 'W'), field('W′', wPrime, 'J'), kText),
       h('div', { class: 'row' }, saveSig),
@@ -197,6 +198,7 @@ export const settingsView: View = (root, app) => {
       h('div', { class: 'row' }, exportBtn, importBtn, fileInput),
       backupStatus,
     ),
+    debug.el,
   );
-  return () => {};
+  return debug.cleanup;
 };

@@ -1,4 +1,4 @@
-import { RealClock, type Clock } from '../core/clock';
+import { RealClock, type Clock, type SimSpeed } from '../core/clock';
 import { Emitter } from '../core/events';
 import { defaultPm5Signature, simulatorSignature, type FitnessSignature } from '../model/signature';
 import { analyzeSession } from '../session/analysis';
@@ -7,14 +7,24 @@ import type { ConnectionState, DataSource, Machine } from '../sources/DataSource
 import type { Pm5Source } from '../sources/pm5/ble';
 import { UsbPm5Source } from '../sources/pm5/usb';
 import { RawLog } from '../sources/rawlog';
-import type { Simulator } from '../sources/simulator';
+import { DEFAULT_DRAG_FACTOR, type SimMode, type Simulator } from '../sources/simulator';
 import type { IdbStore } from '../storage/db';
 import { DEFAULT_SETTINGS, settingsFromRecords, settingsToRecords, wbalOptions, type Settings } from '../storage/settings';
 import type { Session, TestResult } from '../storage/types';
 import type { Workout } from '../workout/schema';
 import { Beeper } from './audio';
 
-export type ViewName = 'start' | 'live' | 'history' | 'session' | 'settings';
+export type ViewName = 'start' | 'workouts' | 'workout' | 'live' | 'history' | 'session' | 'settings';
+
+/** The lists of workouts reached from the start page. */
+export type WorkoutCategory = 'planned' | 'builtin' | 'test';
+
+/** Simulator choices on the start page, kept while the app runs. */
+export interface SimChoices {
+  speed: SimSpeed;
+  mode: SimMode;
+  dragFactor: number;
+}
 
 /** Tears down listeners and timers when leaving a view. */
 export type Cleanup = () => void;
@@ -28,12 +38,16 @@ export class App {
   readonly sourceChanged = new Emitter<ConnectionState>();
   /** The workout chosen on the start page; null = free ride. */
   workout: Workout | null = null;
+  /** The list the workout was chosen from; null when chosen on the start page itself. */
+  category: WorkoutCategory | null = null;
+  sim: SimChoices = { speed: 1, mode: 'followTarget', dragFactor: DEFAULT_DRAG_FACTOR };
   /** Current target in W, read by the simulator. Set by the live view. */
   target: () => number | null = () => null;
   /** Duration of the maximal effort in progress, read by the simulator's fatigue mode. */
   maxEffort: () => number | null = () => null;
-  /** The session shown by the session view. */
+  /** The session shown by the session view, and where its back arrow leads. */
   sessionId: string | null = null;
+  sessionBack: ViewName = 'start';
   settings: Settings = DEFAULT_SETTINGS;
   readonly beeper = new Beeper();
   /** Debug log of raw PM data (settings §8.5, step 0). Kept across views. */
@@ -95,6 +109,14 @@ export class App {
     const simulated = source.kind === 'simulator';
     const stored = await this.store.latestSignature(machine, simulated);
     return stored ?? (simulated ? simulatorSignature(machine) : defaultPm5Signature(machine));
+  }
+
+  /** The active signature, or the PM5's when nothing is connected (USB is the default). */
+  async displaySignature(): Promise<FitnessSignature> {
+    const active = await this.activeSignature();
+    if (active) return active;
+    const machine = this.machine();
+    return (await this.store.latestSignature(machine, false)) ?? defaultPm5Signature(machine);
   }
 
   /** After a session: stores the test result of a completed test (spec §7.3). */

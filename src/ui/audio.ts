@@ -1,6 +1,8 @@
 /** Short beeps via Web Audio (spec §6.3). unlock() must run in a user gesture. */
 export class Beeper {
   private ctx: AudioContext | null = null;
+  /** Silences the beeps (sound button in the live view). */
+  muted = false;
 
   unlock(): void {
     this.ctx ??= new AudioContext();
@@ -9,7 +11,7 @@ export class Beeper {
 
   beep(frequency = 880, duration = 0.12): void {
     const ctx = this.ctx;
-    if (!ctx) return;
+    if (!ctx || this.muted) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.frequency.value = frequency;

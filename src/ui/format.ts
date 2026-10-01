@@ -25,3 +25,11 @@ export function formatDay(date: string, today: string): string {
   if (date === today) return 'Idag';
   return new Date(`${date}T12:00:00`).toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' });
 }
+
+const TEST_NAMES: Record<number, string> = { 30: '30 s', 180: '3 min', 360: '6 min', 720: '12 min' };
+
+/** Name of a test length, e.g. "3 min". */
+export const testName = (seconds: number): string => TEST_NAMES[seconds] ?? formatDuration(seconds);
+
+/** "14,6" for 14 560 J. */
+export const formatKJ = (joules: number): string => (joules / 1000).toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });

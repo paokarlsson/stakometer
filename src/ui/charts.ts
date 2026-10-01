@@ -54,16 +54,17 @@ export function sessionChart(el: HTMLElement, session: Session, a: SessionAnalys
       scales: { x: { time: false }, pct: { range: [Math.min(0, ...wbalPct.map((v) => v ?? 0)), 100] } },
       axes: [
         { ...axisStyle(), values: (_u, vals) => vals.map((v) => formatDuration(v)) },
-        { ...axisStyle(), label: 'W', size: 64 },
-        { ...axisStyle(), scale: 'pct', side: 1, label: 'W′ %', grid: { show: false }, size: 64 },
+        { ...axisStyle(), label: 'Effekt (W)', size: 64 },
+        { ...axisStyle(), scale: 'pct', side: 1, label: 'W′-balans (%)', grid: { show: false }, size: 64 },
       ],
       series: [
         { label: 'Tid', value: (_u, v) => (v === null ? '–' : formatDuration(v)) },
+        // The band edges are hidden in the legend by CSS (.session-chart).
         { label: 'Band, nedre', stroke: css('--chart-band-edge'), width: 1, points: { show: false } },
         { label: 'Band, övre', stroke: css('--chart-band-edge'), width: 1, points: { show: false } },
-        { label: 'Mål', stroke: css('--chart-target'), width: 2.5, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
-        { label: 'Effekt', stroke: css('--text'), width: 2, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
-        { label: 'W′', scale: 'pct', stroke: css('--chart-mpa'), width: 3, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} %`) },
+        { label: 'Mål', stroke: css('--chart-target'), width: 2, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
+        { label: 'Effekt', stroke: css('--accent'), width: 1.75, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
+        { label: 'W′-balans', scale: 'pct', stroke: css('--chart-wbal'), width: 2.5, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} %`) },
       ],
       bands: [{ series: [2, 1], fill: css('--chart-band') }],
     };
@@ -84,19 +85,19 @@ export function signatureChart(el: HTMLElement, points: readonly { t: number; p:
   return mount(el, (width) => {
     const series: uPlot.Series[] = [
       { label: 'Tid', value: (_u, v) => (v === null ? '–' : formatDuration(v)) },
-      { label: 'Ny kurva', stroke: css('--accent'), width: 3.5, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
+      { label: 'Ny kurva', stroke: css('--primary-2'), width: 3, points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) },
       {
-        label: 'Testresultat',
-        stroke: css('--text'),
-        fill: css('--text'),
+        label: 'Testpunkter',
+        stroke: css('--danger'),
+        fill: css('--danger'),
         paths: () => null,
-        points: { show: true, size: 14, stroke: css('--text'), fill: css('--text') },
+        points: { show: true, size: 14, stroke: css('--danger'), fill: css('--danger') },
         value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`),
       },
     ];
     const data: uPlot.AlignedData = [x, x.map((t) => powerAt(t, fitted)), measured];
     if (previous) {
-      series.push({ label: 'Tidigare', stroke: css('--muted'), width: 2.5, dash: [8, 6], points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) });
+      series.push({ label: 'Föregående', stroke: css('--muted'), width: 2.5, dash: [8, 6], points: { show: false }, value: (_u, v) => (v === null ? '–' : `${Math.round(v)} W`) });
       data.push(x.map((t) => powerAt(t, previous)));
     }
     return new uPlot(
@@ -107,7 +108,7 @@ export function signatureChart(el: HTMLElement, points: readonly { t: number; p:
         axes: [
           // Keep every tick: uPlot's log axis otherwise drops those not starting with 1.
           { ...axisStyle(), splits: () => ticks, filter: (_u, splits) => splits, values: (_u, vals) => vals.map((v) => formatDuration(v)) },
-          { ...axisStyle(), label: 'W', size: 64 },
+          { ...axisStyle(), label: 'Effekt (W)', size: 64 },
         ],
         series,
       },

@@ -66,6 +66,17 @@ describe('LiveSession', () => {
     expect(live.currentPowerAvg()).toBeLessThan(1);
   });
 
+  it('sums distance, average power and work for the totals below the chart', async () => {
+    const { live, source, ride } = await setup();
+    expect(live.avgPower()).toBeNull();
+    ride(0, 10, 200); // ticks to t = 9.75: 9 whole seconds, the first at 200 W from the stroke at t = 0
+    expect(live.avgPower()).toBeCloseTo(200, 6);
+    expect(live.workKJ()).toBeCloseTo(1.8, 6);
+    source.status.emit({ ts: 0, pmElapsed: 0, distance: 1000 });
+    source.status.emit({ ts: 0, pmElapsed: 1, distance: 1042.5 });
+    expect(live.distance()).toBeCloseTo(42.5, 6);
+  });
+
   it('keeps the drag factor from the latest stroke that had one', async () => {
     const { live, source, ride } = await setup();
     ride(0, 2, 150);

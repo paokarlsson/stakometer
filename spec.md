@@ -101,8 +101,9 @@ src/
   workout/     schema.ts, expand.ts, runner.ts, plan.ts, builtin/*.json
   session/     recorder.ts, summary.ts
   storage/     db.ts, backup.ts
-  ui/          views/ (start, live, test, session, history, settings)
-               live/canvas.ts
+  ui/          views/ (start, workouts, workout, live, session, history, settings)
+               live/canvas.ts, gauge.ts, maxChart.ts
+               strip.ts, components.ts, icons.ts
 tests/
   fixtures/    rå hex från riktig PM5 (steg 0)
 ```
@@ -427,8 +428,7 @@ UI-texten ska rekommendera att alla fyra görs inom 14 dagar med samma dragfakto
 ### 7.2 Testläge
 
 - Inga varningar för W′ under maxinsatsen.
-- Stor nedräkning och texten "MAX" i stället för målband.
-- Löpande medeleffekt för insatsen visas stort.
+- Under maxinsatsen byter livevyn till en egen skärm: texten "MAX", stor nedräkning, löpande medeleffekt, aktuell effekt och dragtakt, en graf över insatsen från start till slut med snittet och förra testet med samma längd, och knappen "Avbryt test".
 - Före maxinsatsen visas en varning om dragfaktorn skiljer sig från förra testet med samma längd (§7.3), så att dämparen hinner ställas om under uppvärmningen.
 
 ### 7.3 Resultat
@@ -451,39 +451,60 @@ Under inställningar kan användaren mata in PP, CP och W′ direkt, med valider
 
 **Gemensamt för alla vyer:** mörkt tema som standard och stor typografi, eftersom siffrorna ska gå att läsa på 2–3 meters avstånd. Screen Wake Lock hålls aktivt under pass, och det finns en knapp för helskärm.
 
+**Utseende** (användarens skiss 2026-10-01): mörkblå bakgrund och kort med rundade hörn. Blått markerar det valda och det pågående, grönt startar och godkänner, rött betyder MAX och avbrott. Rubrikraden har en pil tillbaka till vänster, och livevyn och resultatvyerna visar klockan till höger. Ikonerna är egna SVG-linjer, inget ikonbibliotek.
+
 ### 8.1 Start
 
-- Knappar för "Anslut PM5 via USB", "Anslut via Bluetooth" och "Använd simulator", plus anslutningsstatus.
-- Panelen "Felsökning": logga rådata, visa rå hex bredvid tolkade drag och ladda ned loggen som JSON.
-- Aktiv signatur. Standardvärden (§5.1) visas som sådana, med en uppmaning att göra test eller mata in egna.
-- Val av pass (planerade pass från elitledet, inbyggda pass, testpass, fri åkning) och startknapp. De planerade passen står överst med knappen "Importera plan…" (§6.7). För ett testpass visas förra resultatet med samma längd och dess dragfaktor (§7.3).
+- **Rubrikrad:** "Stakometer", anslutningsstatus (till exempel "● PM5 ansluten") och ett kugghjul till inställningarna. Ett klick på statusen visar anslutningen, med "Koppla från".
+- **Anslutning:** När inget är anslutet visas knapparna "Anslut PM5 via USB", "Anslut via Bluetooth" och "Använd simulator", och simulatorns hastighet, läge och dragfaktor.
+- **Dagens pass** står överst i blått: dagens första planerade pass som inte är gjort, annars nästa planerade pass.
+- **Rader** med ikon, rubrik och en rad text: Planerade pass (antal denna vecka), Inbyggda pass, Maxtest, Fri åkning, Historik (antal pass), Fitness Signature (aktiv signatur; standardvärden (§5.1) visas som sådana, med en uppmaning att göra test eller mata in egna), Importera planfil (§6.7) och Säkerhetskopiera data (export, §11; import under inställningar).
+- **Listorna:** Planerade pass med dag och ✓ för genomförda, de inbyggda passen med struktur, och testpassen med förra resultatet och dess dragfaktor (§7.3) och råden för testbatteriet (§7.1).
+- **Passvyn** visar det valda passet före start: längd, en remsa med passets delar (§8.2), struktur och beskrivning, anpassning till W′ (§6.5), förra testet med samma längd, atletens värden och varningar från planen (§6.7) och startknappen. När inget är anslutet visas anslutningen ovanför.
+- Panelen "Felsökning" ligger under inställningarna (§8.5).
 
 ### 8.2 Livevy
 
+**Rubrikrad:** anslutningsprick, passets namn och pågående segment (till exempel "Block 1 · 2/10 – 0:40"), knappar för ljud, paus, helskärm och avsluta, och klockan.
+
+**Remsa** under rubriken: en ruta per del av passet (steget på översta nivån), bredd efter längd, med namn, struktur och en liten profil av målen. Uppvärmnings- eller nedvarvningssegment i följd slås ihop, så testens uppvärmning blir "Uppvärmning 10:00". Den pågående delen är blå, med en markering för var i delen passet är.
+
 **Canvas (cirka 70 % av ytan):**
 
+- **Teckenförklaring** ovanför: "Effekt (W)", Effekt (3 drag), Målband, MPA och CP.
 - **X-axel:** från t − 60 s till t + 60 s, med en lodrät "nu"-linje i mitten. Vyn rullar mjukt.
 - **Y-axel:** fast skala per pass, från 0 till `max(högsta målet i passet × 1,4, CP × 1,5)`. Om MPA-linjen hamnar ovanför skalan ritas den i överkant med en pil och en etikett med värdet.
-- **Målband:** fylld yta och mållinje, både bakåt och framåt i tiden.
+- **Målband:** blå fylld yta och mållinje, både bakåt och framåt i tiden.
 - **Effekt:** medelvärdet av de 3 senaste dragen (antalet konfigurerbart). Linjen är grön inom bandet, orange under och röd över.
-- **MPA:** streckad linje.
-- **CP:** tunn referenslinje.
+- **MPA:** gul streckad linje.
+- **CP:** grå streckad referenslinje.
 - **Segmentgränser:** lodräta linjer med etiketter framåt, till exempel "Vila 2:00".
+
+**Under grafen:** tid (med passets längd), distans, medeleffekt och arbete i kJ, räknade som sammanfattningen i §8.3.
 
 **Sidopanel:**
 
-- W′-batteri, vertikalt, med procent och färg enligt §5.7
-- Effekt (3-dragsmedel), dragtakt, puls om den finns
-- Tid kvar i segmentet och nästa segment
+- W′-mätare: en cirkelbåge fylld till W′-balansen i färgen enligt §5.7, med markeringar vid zongränserna, procent och kJ kvar av W′. Under den MPA, eller "Avsluta intervallet" i röd zon och "Över modellen" under noll.
+- Effekt (3-dragsmedel), dragtakt, puls om den finns (med procent av tröskel- eller maxpuls från planen)
+- Tid kvar i segmentet och nästa segment med mål
 - Tid till tomt W′, om effekten ligger över CP
+
+**Rutor ovanpå:**
+
+- **Nedräkning:** stor siffra och passets första segment.
+- **Paus:** pausens längd, texten att tidslinjen står still men W′-balansen räknar vidare, och knapparna "Fortsätt" och "Avsluta pass".
+- **Inför ett hårt segment** (intervall, maxinsats eller mål över CP) visas de sista 10 s [FÖRSLAG] av segmentet före ett kort över grafens vänstra halva, så att målbandet framåt syns: segmentet, nästa segment och dess mål, förlopp, ljudknapp och nedräkning.
+- **Maxinsatsen** har en egen skärm (§7.2).
 
 **Prestanda:** Rita med `requestAnimationFrame`. Vyn ska hålla 30 fps utan hack.
 
 ### 8.3 Efter passet
 
-- **Graf för hela passet (uPlot):** målband, effekt i 1 Hz och W′-balans på en högeraxel.
-- **Sammanfattning:** tid, distans, medeleffekt, arbete i kJ, lägsta W′ (procent och när).
-- **Tabell per intervall:** mål, medeleffekt och andel tid inom bandet.
+- **Rubrik:** passets namn, datum, tid, distans, källa och status.
+- **Graf för hela passet (uPlot):** målband (blått), effekt i 1 Hz (grönt) och W′-balans på en högeraxel (gult).
+- **Sammanfattning:** tid, distans, medeleffekt, arbete i kJ, lägsta W′ (procent och när), snittpuls (med procent av tröskel- eller maxpuls från planen), dragtakt och dragfaktor (median).
+- **Tabell per intervall:** intervallerna och maxinsatsen, eller alla segment med mål om passet saknar intervaller. Mål, medeleffekt, andel tid inom bandet och lägsta W′.
+- **Testpass:** "Testresultat och kurvanpassning" med resultatet, jämförelsen med signaturen, dragfaktorn, föreslagen signatur med skillnaden mot nuvarande, residual, "Godkänn" och "Avböj", och grafen och tabellen i §7.3.
 
 ### 8.4 Historik
 
@@ -496,7 +517,7 @@ En lista med datum, pass, tid, distans, medeleffekt och lägsta W′-procent. Et
 - Anpassning av passen till W′ (§6.5): läge och lägsta W′
 - Gränser för W′-zonerna, W′-modellen (§5.5) och Skiba 2012-konstanterna under "Avancerat"
 - Maskintyp: automatisk eller manuellt val (standard SkiErg)
-- Debugläge som loggar rå PM5-data (finns tills vidare som panelen "Felsökning" på startsidan)
+- Panelen "Felsökning", som loggar rå PM5-data (§12 steg 0)
 - Export och import av hela databasen som JSON
 
 ---
@@ -611,7 +632,7 @@ IndexedDB-databasen heter `skierg-training`, version 2 (version 2 lade till `pla
 
 Kräver en riktig PM5. Agenten bygger loggningen, användaren kör den mot sin SkiErg och lämnar tillbaka loggen.
 
-- **Bygg:** Panelen "Felsökning" på startsidan (§8.1). Den loggar rå hex från PM5 (USB eller Bluetooth) bredvid de tolkade dragen, och loggen kan laddas ned som JSON.
+- **Bygg:** Panelen "Felsökning" (sedan 2026-10-01 under inställningarna, §8.5). Den loggar rå hex från PM5 (USB eller Bluetooth) bredvid de tolkade dragen, och loggen kan laddas ned som JSON.
 - **Klart när:**
   - effekten per drag stämmer med PM5-displayen (±2 W) för 20 drag i följd – **klart för USB** (2026-09-24),
   - dragtakten stämmer,

@@ -1,6 +1,6 @@
 // Text outline of a workout's structure, for a planned workout on the start page (spec §6.7).
-import { BLOCK_LABEL, KIND_LABEL } from '../workout/expand';
-import type { RestSpec, Target, WorkoutStep } from '../workout/schema';
+import { BLOCK_LABEL, expand, KIND_LABEL, totalDuration } from '../workout/expand';
+import { isStructured, type RestSpec, type Target, type Workout, type WorkoutStep } from '../workout/schema';
 import { formatDuration } from './format';
 
 export interface OutlineLine {
@@ -42,3 +42,6 @@ export function outline(steps: readonly WorkoutStep[], depth = 0): OutlineLine[]
     return [{ depth, text, ...(description && { description }) }];
   });
 }
+
+/** "1:02:00", or "ostrukturerat" for a workout without segments. */
+export const workoutLength = (w: Workout): string => (isStructured(w) ? formatDuration(totalDuration(expand(w, null))) : 'ostrukturerat');

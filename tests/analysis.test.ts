@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeSession, timelineMapper } from '../src/session/analysis';
+import { analyzeSession, intervalRows, strokeStats, timelineMapper } from '../src/session/analysis';
 import { powerAt } from '../src/model/morton3p';
 import { dragFactorDiffers, mixedDragFactors, previousTest, suggestSignature, testResultFrom } from '../src/session/testResults';
 import type { Chunk, Session, TestResult } from '../src/storage/types';
@@ -111,6 +111,39 @@ describe('analyzeSession', () => {
     const a = analyzeSession(session(timeline, 'test'), [chunk(powers, [{ t: 0, state: 'running' }, { t: 20, state: 'finished' }], dfs)]);
     expect(a.maxEffort?.dragFactor).toBe(111);
     expect(testResultFrom(session(timeline, 'test'), a, () => 'r1')).toMatchObject({ dragFactor: 111 });
+  });
+});
+
+describe('result view (§8.3)', () => {
+  it('gives the lowest W′ per segment', () => {
+    const timeline = [seg(0, 10, 300), seg(10, 20, 100)];
+    // 10 s at 100 W over CP drains 1000 J of 15 000; recovery follows.
+    const powers = [...Array(10).fill(300), ...Array(10).fill(100)];
+    const a = analyzeSession(session(timeline), [chunk(powers, [{ t: 0, state: 'running' }, { t: 20, state: 'finished' }])]);
+    expect(a.segments[0]!.minWbal).toBeCloseTo((15000 - 1000) / 15000, 3);
+    expect(a.segments[1]!.minWbal!).toBeGreaterThan(a.segments[0]!.minWbal!);
+    const none = analyzeSession({ ...session(timeline), signatureSnapshot: null }, [chunk(powers, [{ t: 0, state: 'running' }, { t: 20, state: 'finished' }])]);
+    expect(none.segments[0]!.minWbal).toBeNull();
+  });
+
+  it('lists the intervals and the maximal effort, else every segment with a target', () => {
+    const rest = { ...seg(10, 20, 80), kind: 'rest' };
+    const steady = { ...seg(0, 10, 150), kind: 'steady' };
+    const stats = (segments: TimelineSegment[]) => segments.map((segment) => ({ segment, seconds: 0, avgPower: null, inBand: null, minWbal: null }));
+    expect(intervalRows(stats([seg(0, 10, 300), rest, seg(20, 30, null, true)])).map((x) => x.segment.start)).toEqual([0, 20]);
+    expect(intervalRows(stats([steady, rest, { ...seg(20, 30, null), kind: 'cooldown' }])).map((x) => x.segment.start)).toEqual([0, 10]);
+  });
+
+  it('averages heart rate and stroke rate and takes the median drag factor', () => {
+    const c = chunk([200, 200, 200], [], [110, 112, 150]);
+    c.strokes[1]!.strokeRate = 36;
+    c.status = [
+      { t: 1, pmElapsed: 1, distance: 0, heartRate: 150 },
+      { t: 2, pmElapsed: 2, distance: 0, heartRate: 160 },
+      { t: 3, pmElapsed: 3, distance: 0 },
+    ];
+    expect(strokeStats([c])).toEqual({ avgHeartRate: 155, avgStrokeRate: 32, dragFactor: 112 });
+    expect(strokeStats([chunk([200], [])])).toEqual({ avgHeartRate: null, avgStrokeRate: 30, dragFactor: null });
   });
 });
 
