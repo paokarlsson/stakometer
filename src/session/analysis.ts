@@ -36,6 +36,18 @@ export interface SegmentStats {
   avgPower: number | null;
   /** Share of the segment's seconds with power inside the band; null without a band. */
   inBand: number | null;
+  /** Lowest W′ balance in the segment as a fraction of W′ (may be negative); null without a signature. */
+  minWbal: number | null;
+}
+
+/** Averages over the strokes and statuses, for the summary after the session (spec §8.3). */
+export interface StrokeStats {
+  /** Average of the valid heart rates, bpm; null when the source gave none. */
+  avgHeartRate: number | null;
+  /** Average stroke rate over the strokes, strokes/min. */
+  avgStrokeRate: number | null;
+  /** Median drag factor over the strokes; null when the source gives none. */
+  dragFactor: number | null;
 }
 
 export interface SessionAnalysis {
@@ -61,6 +73,18 @@ function median(values: readonly number[]): number | null {
   return v.length % 2 ? v[mid]! : (v[mid - 1]! + v[mid]!) / 2;
 }
 
+const mean = (values: readonly number[]): number | null => (values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null);
+
+export function strokeStats(chunks: readonly Chunk[]): StrokeStats {
+  const strokes = chunks.flatMap((c) => c.strokes);
+  const status = chunks.flatMap((c) => c.status);
+  return {
+    avgHeartRate: mean(status.flatMap((s) => (s.heartRate !== undefined && s.heartRate > 0 ? [s.heartRate] : []))),
+    avgStrokeRate: mean(strokes.flatMap((s) => (s.strokeRate > 0 ? [s.strokeRate] : []))),
+    dragFactor: median(strokes.flatMap((s) => (s.raw?.dragFactor !== undefined ? [s.raw.dragFactor] : []))),
+  };
+}
+
 export function analyzeSession(session: Session, chunks: readonly Chunk[], wbalOptions: WbalOptions = DEFAULT_WBAL): SessionAnalysis {
   const strokes = chunks.flatMap((c) => c.strokes);
   const status = chunks.flatMap((c) => c.status);
@@ -75,15 +99,19 @@ export function analyzeSession(session: Session, chunks: readonly Chunk[], wbalO
 
   const segments: SegmentStats[] = (session.timeline ?? []).map((segment) => {
     const inside: { p: number; tl: number }[] = [];
+    let minWbal: number | null = null;
     power.forEach((p, i) => {
       const tl = timeline[i];
-      if (tl !== null && tl !== undefined && tl >= segment.start && tl < segment.end) inside.push({ p, tl });
+      if (tl === null || tl === undefined || tl < segment.start || tl >= segment.end) return;
+      inside.push({ p, tl });
+      const w = wbal?.[i];
+      if (sig && w !== undefined) minWbal = Math.min(minWbal ?? Infinity, w / sig.wPrime);
     });
     const avgPower = inside.length > 0 ? inside.reduce((a, x) => a + x.p, 0) / inside.length : null;
     // The band at each second, ramps included.
     const withBand = inside.map((x) => ({ p: x.p, band: targetAt(session.timeline!, x.tl) })).filter((x) => x.band !== null);
     const inBand = withBand.length > 0 ? withBand.filter((x) => x.p >= x.band!.lo && x.p <= x.band!.hi).length / withBand.length : null;
-    return { segment, seconds: inside.length, avgPower, inBand };
+    return { segment, seconds: inside.length, avgPower, inBand, minWbal };
   });
 
   const max = segments.find((s) => s.segment.isMax);
@@ -104,4 +132,10 @@ export function analyzeSession(session: Session, chunks: readonly Chunk[], wbalO
       : null;
 
   return { power, wbal, timeline, segments, maxEffort };
+}
+
+/** The rows of the table per interval (§8.3): the intervals and the maximal effort when there are any, else every segment with a target. */
+export function intervalRows(segments: readonly SegmentStats[]): SegmentStats[] {
+  const work = segments.filter((x) => x.segment.kind === 'interval' || x.segment.isMax);
+  return work.length > 0 ? work : segments.filter((x) => x.segment.targetW !== null);
 }

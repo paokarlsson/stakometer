@@ -11,7 +11,7 @@ import type { Session } from '../src/storage/types';
 import { outline, targetText } from '../src/ui/outline';
 import { calibrate } from '../src/workout/calibrate';
 import { expand, totalDuration } from '../src/workout/expand';
-import { heartRateShare, isIsoDate, parsePlan, plannedForList, type PlannedWorkout } from '../src/workout/plan';
+import { completedPlanIds, featuredPlanned, heartRateShare, isIsoDate, parsePlan, plannedForList, weekStart, type PlannedWorkout } from '../src/workout/plan';
 import { isStructured, maxEffortDuration, parseWorkout, usesPctCP } from '../src/workout/schema';
 import example from './fixtures/plan/plan-exempel.json';
 import { MemoryStore } from './helpers/memoryStore';
@@ -188,6 +188,31 @@ describe('list order and heart rate', () => {
     expect(heartRateShare(151, { maxHR: 188 })).toEqual({ fraction: 151 / 188, of: 'max' });
     expect(heartRateShare(151, { cp: 215 })).toBeNull();
     expect(heartRateShare(151, undefined)).toBeNull();
+  });
+});
+
+describe('start page', () => {
+  const w = (id: string, date: string) => ({ id, date }) as PlannedWorkout;
+
+  it('features today\'s first workout not yet done, else the next one', () => {
+    const list = [w('a', '2026-10-06'), w('b', '2026-10-06'), w('c', '2026-10-08')];
+    expect(featuredPlanned(list, '2026-10-06', new Set())?.id).toBe('a');
+    expect(featuredPlanned(list, '2026-10-06', new Set(['a']))?.id).toBe('b');
+    expect(featuredPlanned(list, '2026-10-06', new Set(['a', 'b']))?.id).toBe('a');
+    expect(featuredPlanned(list, '2026-10-07', new Set())?.id).toBe('c');
+    expect(featuredPlanned([w('old', '2026-10-01')], '2026-10-07', new Set())).toBeUndefined();
+  });
+
+  it('counts the week from Monday and marks completed sessions', () => {
+    expect(weekStart('2026-10-01')).toBe('2026-09-28'); // Thursday
+    expect(weekStart('2026-10-05')).toBe('2026-10-05'); // Monday
+    expect(weekStart('2026-10-11')).toBe('2026-10-05'); // Sunday
+    const ids = completedPlanIds([
+      { planned: { id: 'a' }, status: 'completed' },
+      { planned: { id: 'b' }, status: 'aborted' },
+      { status: 'completed' },
+    ]);
+    expect([...ids]).toEqual(['a']);
   });
 });
 

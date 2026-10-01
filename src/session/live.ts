@@ -55,6 +55,12 @@ export class LiveSession {
   private lastStrokeT = -Infinity;
   private lastStrokeRate: number | null = null;
   private lastDragFactor: number | null = null;
+  /** First and latest distance from statuses and from strokes; statuses count when there are any, like the summary. */
+  private statusDistance: { first: number; last: number } | null = null;
+  private strokeDistance: { first: number; last: number } | null = null;
+  /** Sum of the 1 Hz power so far (J) and the seconds it covers, as in the summary (§8.3). */
+  private workJ = 0;
+  private workSeconds = 0;
   private offs: Unsubscribe[] = [];
   private readonly avgN: number;
   private readonly wbalOptions: WbalOptions;
@@ -97,8 +103,12 @@ export class LiveSession {
         this.lastStrokeRate = s.strokeRate;
         if (s.raw?.dragFactor !== undefined) this.lastDragFactor = s.raw.dragFactor;
         this.power.push({ t, value: this.currentPowerAvg() });
+        this.strokeDistance = { first: this.strokeDistance?.first ?? s.distance, last: s.distance };
       }),
-      this.source.onStatus((s) => (this.lastStatus = s)),
+      this.source.onStatus((s) => {
+        this.lastStatus = s;
+        this.statusDistance = { first: this.statusDistance?.first ?? s.distance, last: s.distance };
+      }),
       this.runner.stateChanged.on((state) => this.recorder.mark(state)),
     ];
     this.recorder.mark('countdown');
@@ -113,6 +123,8 @@ export class LiveSession {
     const start = this.resampler.seconds;
     this.resampler.advanceTo(t).forEach((p, i) => {
       const n = start + i + 1;
+      this.workJ += p;
+      this.workSeconds += 1;
       // Running average of the maximal effort, from the 1 Hz series like the test result (§7.2, §7.3).
       if (this.runner.segmentAt(this.runner.timelineAt(n - 0.5))?.isMax) {
         this.maxSum += p;
@@ -145,6 +157,22 @@ export class LiveSession {
   strokeRate(): number | null {
     if (this.sessionTime() - this.lastStrokeT > STALE_AFTER_S) return null;
     return this.lastStatus?.strokeRate ?? this.lastStrokeRate;
+  }
+
+  /** Metres since the start, counted like the summary (§8.3): PM5 distance is cumulative for its own workout, so the difference counts. */
+  distance(): number {
+    const span = this.statusDistance ?? this.strokeDistance;
+    return span ? Math.max(0, span.last - span.first) : 0;
+  }
+
+  /** Average of the 1 Hz power since t = 0, null before the first second. */
+  avgPower(): number | null {
+    return this.workSeconds > 0 ? this.workJ / this.workSeconds : null;
+  }
+
+  /** Work since t = 0 from the 1 Hz power, kJ. */
+  workKJ(): number {
+    return this.workJ / 1000;
   }
 
   /** Drag factor from the latest stroke that had one, null when the source gives none. */
