@@ -50,7 +50,7 @@ Arbetet efter v1 står i [`plan.md`](plan.md) (beslut 2026-09-29). Där står oc
 **Planeras efter v1** (se `plan.md` §6 och §7):
 
 - Breakthroughs inom ett pass
-- Separat pulsband
+- Separat pulsband, med RR-intervallen som rådata
 - Kraftkurva per drag
 - PWA och offline-läge
 - FIT-export, bara om passen ska till Garmin eller Strava
@@ -551,7 +551,7 @@ Bekräftat 2026-09-24: appen ansluter via USB och effekten per drag stämmer med
 - **Dragdata [BEKRÄFTAT i demo/]:** notifications på `0036`. Om den inte går att prenumerera på används multiplexade `0080`, där byte 0 är id (0x36) och resten har samma layout som `0036`.
 - **Övrigt [VERIFIERA]:** samplingsintervall till `0034` (3 = 100 ms) och notifications på `0031`, `0032`, `0033` och `0035`. Dessa är valfria. Anslutningen lyckas även om de misslyckas.
 - **Återanslutning:** vid `gattserverdisconnected` görs upp till 5 försök med ökande väntetid. Passet fortsätter under tiden, och luckan markeras i datan.
-- **Puls [VERIFIERA]:** från `0032` om värdet är giltigt (skilt från 255). Separat pulsband kommer i v2.
+- **Puls [VERIFIERA]:** från `0032` om värdet är giltigt (skilt från 255). Separat pulsband kommer i v2 (`plan.md` §5). Det sparar också RR-intervallen ur Heart Rate Measurement (`0x2A37`, flaggbit 4, enheter om 1/1024 s), som PM5 inte ger.
 
 UUID-bas: `ce06XXXX-43e5-11e4-916c-0800200c9a66`
 
