@@ -114,18 +114,19 @@ Backupen i spec §11 (`format: 'skierg-backup'`) är det som elitledet läser. D
 
 - Formatet ändras bara med ny `version`, och elitledet ska uppdateras i samma veva.
 - Rådata först (spec §11) gäller fortsatt: allt PM5 ger sparas, även det stakometer själv inte använder.
-- Sammanfattningen per pass räknas som i dag. elitledet räknar med samma omsampling (spec §5.4) när den räknar själv.
+- Sammanfattningen per pass räknas som i dag. elitledet räknar med samma omsampling (spec §5.4) när den räknar själv. Sedan 2026-10-03 läser elitledets analys (`analys/`) backupen, och dess test kör stakometers referenstester och en backup skriven av stakometers egen kod.
 
 ## 5. Fånga allt som går (steg 6)
 
 - **Puls från PM5 över USB.** `GETHRCUR` pollas redan (spec §9.1). Verifiera med ett pulsband parat med PM5, och markera [BEKRÄFTAT] i §9.1.
 - **Separat pulsband** över Web Bluetooth (Heart Rate Service `0x180D`), för när PM5 inte ger puls. Pulsen sparas i statusdatan med samma tidsstämpel som allt annat.
+- **RR-intervall från pulsbandet** (beslut 2026-10-03). Heart Rate Measurement (`0x2A37`) har med flaggbit 4 satt ett eller flera RR-intervall i enheter om 1/1024 s efter pulsen. De sparas som rådata, oavrundade, med mottagningstiden. PM5 sparar inga RR-intervall, så det här är enda sättet att få dem. Med dem kan elitledet pröva HRV under passet och DFA-α1 för att hitta LT1 (elitledets `plan.md` §5). Kräver ett band som skickar RR, till exempel Polar H10.
 - **Kraftkurva per drag** sparas som rådata. Hur den visas bestäms senare.
 - **Övriga fält** från PM5 (Bluetooth `0035`, CSAFE-svar) sparas i `raw` som i dag.
 
 Analysen av pulsen, som pulsdrift och HRR30/HRR60, görs i elitledet. stakometer visar pulsen live och i grafen efter passet.
 
-**Klart när:** ett pass med pulsband ger puls i backupen, och §9 är uppdaterad med vad som är bekräftat.
+**Klart när:** ett pass med pulsband ger puls och RR-intervall i backupen, och §9 är uppdaterad med vad som är bekräftat.
 
 ## 6. v2-listan efter rensningen
 
@@ -160,11 +161,11 @@ Fortsätter numreringen i spec §12.
 |---|---|---|
 | 4 | Testbatteriet: 6 och 12 min, residual, dragfaktor i testresultatet (klart 2026-09-29) | §3 |
 | 5 | Import av planerade pass med `id`, `date`, `calibration`, `athlete`, beskrivningar och block (klart 2026-09-30) | §4.1 |
-| 6 | Fånga mer: puls via PM5 och pulsband, kraftkurva som rådata | §5 |
+| 6 | Fånga mer: puls via PM5 och pulsband, RR-intervall, kraftkurva som rådata | §5 |
 | 7 | Breakthroughs inom passet | §6 |
 
 ## 8. Öppet
 
-- **Dubbelräkning:** om Garmin-klockan också spelar in SkiErg-passet finns det två gånger. Löses i elitledet, senare.
+- **Dubbelräkning:** om Garmin-klockan också spelar in SkiErg-passet finns det två gånger. Löses i elitledet: analysen tar bort en Garmin-aktivitet som överlappar ett stakometer-pass med mer än halva tiden (2026-10-03).
 - **W′-återhämtningen** är inte kalibrerad för stakning (spec §13). Ändras modellen ska elitledet följa med.
 - **Pulsen över USB** är inte verifierad mot en riktig PM5.
