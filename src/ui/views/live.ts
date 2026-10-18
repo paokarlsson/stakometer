@@ -16,11 +16,13 @@ import { beepsDue } from '../../workout/runner';
 import type { View } from '../app';
 import { iconButton, stat, wallClock } from '../components';
 import { h } from '../dom';
-import { formatDistance, formatDuration, formatPower, testName } from '../format';
+import { connectionLost, deviceLabel } from '../connection';
+import { formatDistance, formatDuration, formatPower, formatSpeed, formatWhole, testName } from '../format';
 import { icon } from '../icons';
 import { LiveChart, yMaxFor } from '../live/canvas';
 import { wbalGauge } from '../live/gauge';
 import { MaxChart } from '../live/maxChart';
+import { SPORT_LABELS } from '../sport';
 import { workoutStrip } from '../strip';
 
 /** [FÖRSLAG] How long into a planned workout a drag factor unlike the plan's is pointed out, s. */
@@ -58,10 +60,13 @@ export const liveView: View = (root, app) => {
   const planned = isPlanned(workout) ? workout : null;
   const settings = app.settings;
   const sim = app.simulator;
+  const sport = app.sport();
+  const labels = SPORT_LABELS[sport];
+  const device = deviceLabel(app);
 
   // --- Header ---
   const connDot = h('span', { class: 'conn-dot', title: 'Anslutning' });
-  const subtitle = h('div', { class: 'live-sub' }, structured ? '' : workout ? 'Fri åkning med passets beskrivning' : 'Ingen tidslinje – åk tills du stoppar');
+  const subtitle = h('div', { class: 'live-sub' }, structured ? '' : workout ? `${labels.free} med passets beskrivning` : 'Ingen tidslinje – åk tills du stoppar');
   const soundBtn = iconButton('sound', 'Ljud', () => {
     app.beeper.muted = !app.beeper.muted;
     soundBtn.replaceChildren(icon(app.beeper.muted ? 'mute' : 'sound'));
@@ -77,8 +82,12 @@ export const liveView: View = (root, app) => {
 
   // --- Chart ---
   const canvas = h('canvas', { class: 'chart', role: 'img', 'aria-label': 'Effekt, målband och MPA över tid' });
-  const legend = h('div', { class: 'legend' }, h('span', { class: 'axis' }, 'Effekt (W)'), legendKey('power', `Effekt (${settings.powerAvgStrokes} drag)`));
-  const banner = h('p', { class: 'banner', hidden: true }, 'Återansluter till PM5 – passet fortsätter');
+  const legend = h('div', { class: 'legend' }, h('span', { class: 'axis' }, 'Effekt (W)'), legendKey('power', `Effekt (${settings.powerAvgStrokes} ${labels.avgUnit})`));
+  const banner = h('p', { class: 'banner', hidden: true }, `Återansluter till ${device} – passet fortsätter`);
+  // Automatic reconnecting gave up: the session keeps running without data until reconnected.
+  const reconnectBtn = h('button', { class: 'secondary' }, 'Återanslut');
+  reconnectBtn.addEventListener('click', () => void app.reconnectable?.reconnect());
+  const lostBanner = h('p', { class: 'banner', hidden: true }, `${device} frånkopplad – ingen data kommer in`, reconnectBtn);
   // Before the maximal effort: a drag factor unlike the last test of the same length (spec §7.3).
   const dragBanner = h('p', { class: 'banner', hidden: true });
   const fps = h('div', { class: 'fps', hidden: !app.debugLogging });
@@ -106,7 +115,7 @@ export const liveView: View = (root, app) => {
     prepareLeft,
   );
 
-  const chartCard = h('div', { class: 'chart-card' }, legend, canvas, h('div', { class: 'banners' }, banner, dragBanner), countdown, prepare, fps);
+  const chartCard = h('div', { class: 'chart-card' }, legend, canvas, h('div', { class: 'banners' }, banner, lostBanner, dragBanner), countdown, prepare, fps);
 
   // --- Totals below the chart ---
   const elapsed = stat('Tid');
@@ -117,8 +126,11 @@ export const liveView: View = (root, app) => {
   // --- Side panel ---
   const gauge = wbalGauge([settings.zones.orange, settings.zones.yellow, settings.zones.green]);
   const power = stat('Effekt (W)', '–', 'stat power');
-  const rate = stat('Dragtakt (drag/min)');
+  const rate = stat(labels.cadence);
+  const force = stat(labels.force);
+  const speed = stat('Hastighet (km/h)');
   const heartRate = stat('Puls (slag/min)');
+  speed.el.hidden = !labels.showSpeed;
   const segLeft = stat('Tid kvar');
   const empty = stat('Tid till tomt (est)');
   const next = stat('Nästa segment', '–', 'stat next');
@@ -151,8 +163,8 @@ export const liveView: View = (root, app) => {
   const maxLeft = stat('Kvar', '–', 'stat left');
   const maxAvg = stat('Medeleffekt (W)', '–', 'stat avg');
   const maxNow = stat('Aktuell effekt (W)');
-  const maxRate = stat('Dragtakt');
-  const maxBanner = h('p', { class: 'banner', hidden: true }, 'Återansluter till PM5 – testet fortsätter');
+  const maxRate = stat(labels.cadenceShort);
+  const maxBanner = h('p', { class: 'banner', hidden: true }, `Återansluter till ${device} – testet fortsätter`);
   const abortBtn = h('button', { class: 'danger solid big wide' }, 'Avbryt test');
   abortBtn.addEventListener('click', () => requestStop());
   const maxLegend = h('div', { class: 'legend' }, h('span', { class: 'axis' }, 'Effekt (W)'), legendKey('dot', 'Effekt'), legendKey('avg', 'Snitt'));
@@ -182,7 +194,7 @@ export const liveView: View = (root, app) => {
           'div',
           { class: 'live-head' },
           connDot,
-          h('div', { class: 'titles' }, h('h1', {}, workout?.name ?? 'Fri åkning'), subtitle),
+          h('div', { class: 'titles' }, h('h1', {}, workout?.name ?? labels.free), subtitle),
           h('div', { class: 'controls' }, soundBtn, pauseBtn, fullscreenBtn, stopBtn),
           wallClock(),
         ),
@@ -191,7 +203,7 @@ export const liveView: View = (root, app) => {
         chartCard,
         h('div', { class: 'live-stats' }, elapsed.el, distance.el, avgPower.el, work.el),
       ),
-      h('aside', { class: 'live-side' }, gauge.el, h('div', { class: 'side-tiles' }, power.el, rate.el, heartRate.el, segLeft.el, empty.el, next.el), simInfo),
+      h('aside', { class: 'live-side' }, gauge.el, h('div', { class: 'side-tiles' }, power.el, force.el, rate.el, speed.el, heartRate.el, segLeft.el, empty.el, next.el), simInfo),
       pauseOverlay,
       maxScreen,
     ),
@@ -262,7 +274,7 @@ export const liveView: View = (root, app) => {
     if (runner.state === 'countdown') {
       setText(countdownNumber, String(Math.ceil(-t)));
       const first = runner.timeline?.[0];
-      setText(countdownFirst, first ? `Först: ${first.label} ${formatDuration(first.end - first.start)} · ${targetText(first)}` : 'Fri åkning');
+      setText(countdownFirst, first ? `Först: ${first.label} ${formatDuration(first.end - first.start)} · ${targetText(first)}` : labels.free);
       if (prevCountdown !== null && beepsDue(prevCountdown, -t) > 0) app.beeper.beep();
       prevCountdown = -t;
     }
@@ -340,10 +352,13 @@ export const liveView: View = (root, app) => {
     // Values
     const p = l.currentPowerAvg();
     setText(power.value, String(Math.round(p)));
-    const sr = l.strokeRate();
-    setText(rate.value, sr ? String(Math.round(sr)) : '–');
+    setText(rate.value, cadenceText(l));
+    setText(force.value, formatWhole(sport === 'bike' ? l.torque() : l.force()));
+    if (labels.showSpeed) setText(speed.value, formatSpeed(l.speed()));
     const hr = l.heartRate();
-    heartRate.el.hidden = hr === null;
+    // A bike shows "–" without heart rate; the SkiErg hides the tile as before.
+    heartRate.el.hidden = hr === null && sport !== 'bike';
+    if (hr === null) setText(heartRate.value, '–');
     if (hr !== null) {
       const share = heartRateShare(hr, planned?.athlete);
       setWithNote(heartRate.value, String(hr), share ? `${Math.round(share.fraction * 100)} % av ${share.of === 'threshold' ? 'tröskel' : 'max'}` : undefined);
@@ -383,8 +398,13 @@ export const liveView: View = (root, app) => {
     setWithNote(maxLeft.value, formatDuration(Math.ceil(remaining)), `${formatDuration(Math.max(0, length - remaining))} / ${formatDuration(length)}`);
     setText(maxAvg.value, avg === null ? '–' : String(Math.round(avg)));
     setText(maxNow.value, String(Math.round(l.currentPowerAvg())));
-    const sr = l.strokeRate();
-    setText(maxRate.value, sr ? String(Math.round(sr)) : '–');
+    setText(maxRate.value, cadenceText(l));
+  }
+
+  /** Stroke rate ("–" when 0, as before) or bike cadence (0 when the cranks stand still). */
+  function cadenceText(l: LiveSession): string {
+    const c = l.strokeRate();
+    return formatWhole(sport === 'bike' ? c : c || null);
   }
 
   const onKey = (e: KeyboardEvent): void => {
@@ -413,6 +433,8 @@ export const liveView: View = (root, app) => {
   const showConnection = (): void => {
     connDot.dataset.state = app.connection;
     banner.hidden = app.connection !== 'reconnecting';
+    lostBanner.hidden = !connectionLost(app);
+    reconnectBtn.hidden = !app.reconnectable;
     maxBanner.hidden = banner.hidden;
   };
   const offConnection = source.onConnection(showConnection);

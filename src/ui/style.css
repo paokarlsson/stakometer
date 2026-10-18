@@ -316,6 +316,14 @@ details summary {
   background: var(--warn);
 }
 
+.pill[data-state='lost'] {
+  color: var(--danger);
+}
+
+.pill[data-state='lost']::before {
+  background: var(--danger);
+}
+
 /* --- Menu tiles (start page) --- */
 
 .tiles {
@@ -829,6 +837,10 @@ pre.log {
 
 .conn-dot[data-state='disconnected'] {
   background: var(--danger);
+}
+
+.banner button {
+  margin-left: 0.75em;
 }
 
 @keyframes blink {

@@ -17,7 +17,7 @@ export interface Settings {
   wbalModel: WbalModel;
   /** Constants for the Skiba 2012 model. */
   skiba: SkibaConstants;
-  /** 'auto' uses what the PM reports (Bluetooth), falling back to SkiErg. */
+  /** 'auto' uses what the PM reports (Bluetooth), falling back to SkiErg. A bike trainer is always 'trainer'. */
   machine: 'auto' | Machine;
   /** How workouts are fitted to the planned W′ balance (off, only lower, or land on the minimum). */
   calibration: CalibrationMode;
@@ -36,7 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   minWbal: 0.3,
 };
 
-const MACHINES = ['auto', 'skierg', 'rowerg', 'bikeerg'] as const;
+const MACHINES: readonly Settings['machine'][] = ['auto', 'skierg', 'rowerg', 'bikeerg', 'trainer'];
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** Returns an error message (UI text) or null. */

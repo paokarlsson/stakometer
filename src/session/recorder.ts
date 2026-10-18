@@ -2,7 +2,7 @@ import type { Clock } from '../core/clock';
 import type { Unsubscribe } from '../core/events';
 import type { FitnessSignature } from '../model/signature';
 import type { WbalOptions } from '../model/wbal';
-import type { DataSource, Machine } from '../sources/DataSource';
+import { sportOf, type DataSource, type Machine } from '../sources/DataSource';
 import type {
   ConnectionEvent,
   RecordedStatus,
@@ -82,6 +82,7 @@ export class Recorder {
       id: this.newId(),
       startedAt: this.wallClock().toISOString(),
       machine: opts.machine,
+      sport: sportOf(opts.machine),
       source: source.kind,
       mode: opts.mode,
       ...(opts.workoutId !== undefined && { workoutId: opts.workoutId }),

@@ -37,6 +37,21 @@ export function defaultPm5Signature(machine: Machine = 'skierg'): FitnessSignatu
   return { id: 'pm5-default', machine, ...DEFAULT_PM5_SIGNATURE, createdAt: new Date(0).toISOString(), source: 'manual' };
 }
 
+/**
+ * [FÖRSLAG] Starting signature for a bike trainer, kept apart from the SkiErg's: legs give a
+ * higher CP and a much higher short-term peak than double poling. k = 30 s.
+ */
+export const DEFAULT_TRAINER_SIGNATURE: SignatureParams = { pp: 700, cp: 200, wPrime: 15_000 };
+
+/** Starting signature for a real device of this machine type until the user has one of their own. */
+export function defaultSignature(machine: Machine = 'skierg'): FitnessSignature {
+  if (machine !== 'trainer') return defaultPm5Signature(machine);
+  return { id: 'trainer-default', machine, ...DEFAULT_TRAINER_SIGNATURE, createdAt: new Date(0).toISOString(), source: 'manual' };
+}
+
+/** A real device's starting values (not the simulator's), which the user should replace. */
+export const isDeviceDefault = (s: Pick<FitnessSignature, 'id'>): boolean => s.id === 'pm5-default' || s.id === 'trainer-default';
+
 /** Placeholder signature for the simulator (spec §5.1), not real values. k = 50 s. */
 export const SIMULATOR_SIGNATURE: SignatureParams = { pp: 500, cp: 200, wPrime: 15_000 };
 

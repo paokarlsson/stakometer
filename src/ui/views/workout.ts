@@ -1,6 +1,6 @@
 // A chosen workout before the start (spec §8.1, §6.5, §6.7, §7.3): its parts, structure and
 // description, the intensity fitted to W′, the coach's values and warnings, and the start button.
-import { kOf, validateSignature, type FitnessSignature } from '../../model/signature';
+import { isDeviceDefault, kOf, validateSignature, type FitnessSignature } from '../../model/signature';
 import { previousTest } from '../../session/testResults';
 import { calibrationOptions } from '../../storage/settings';
 import { calibrate } from '../../workout/calibrate';
@@ -14,6 +14,7 @@ import { h } from '../dom';
 import { formatDate, formatDay, formatDuration, formatKJ, formatPower } from '../format';
 import { icon } from '../icons';
 import { outline } from '../outline';
+import { SPORT_LABELS } from '../sport';
 import { workoutStrip } from '../strip';
 import { BATTERY_ADVICE } from './workouts';
 
@@ -118,14 +119,14 @@ export const workoutView: View = (root, app) => {
     ];
     // Only for a real PM5; the simulator has its own signature.
     if (a && !sig.simulated && sig.id !== 'simulator-default') {
-      if (sig.id === 'pm5-default' && a.pp !== undefined && a.cp !== undefined && a.wPrime !== undefined && validateSignature({ pp: a.pp, cp: a.cp, wPrime: a.wPrime }) === null) {
+      if (isDeviceDefault(sig) && a.pp !== undefined && a.cp !== undefined && a.wPrime !== undefined && validateSignature({ pp: a.pp, cp: a.cp, wPrime: a.wPrime }) === null) {
         const use = h('button', { class: 'secondary' }, `Använd planens signatur (CP ${Math.round(a.cp)} W)`);
         use.addEventListener('click', async () => {
           await app.store.putSignature({ id: crypto.randomUUID(), machine: app.machine(), pp: a.pp!, cp: a.cp!, wPrime: a.wPrime!, createdAt: new Date().toISOString(), source: 'manual' });
           await render();
         });
         nodes.push(h('div', { class: 'notice' }, 'Aktiv signatur är standardvärden. Planen har egna värden för PP, CP och W′.', h('div', { class: 'row' }, use)));
-      } else if (sig.id !== 'pm5-default') {
+      } else if (!isDeviceDefault(sig)) {
         const cpDiffers = a.cp !== undefined && Math.abs(a.cp - sig.cp) / sig.cp > PLAN_CP_TOLERANCE;
         const wDiffers = a.wPrime !== undefined && Math.abs(a.wPrime - sig.wPrime) / sig.wPrime > PLAN_WPRIME_TOLERANCE;
         if (cpDiffers || wDiffers) {
@@ -168,7 +169,7 @@ export const workoutView: View = (root, app) => {
 
   root.append(
     pageHeader({
-      title: w?.name ?? 'Fri åkning',
+      title: w?.name ?? SPORT_LABELS[app.sport()].free,
       subtitle: planned ? 'Planerat pass från elitledet' : maxLength !== null ? 'Maxtest' : w ? 'Inbyggt pass' : 'Ingen tidslinje',
       onBack: back,
       right: [pill.el],

@@ -13,8 +13,11 @@ export function summarize(chunks: readonly Chunk[], signature: SignatureParams |
   for (const s of status) duration = Math.max(duration, s.t);
 
   // PM5 distance is cumulative for its own workout, so take the difference over the session.
-  const dist = status.length > 0 ? status.map((s) => s.distance) : strokes.map((s) => s.distance);
-  const distance = dist.length > 0 ? Math.max(0, dist[dist.length - 1]! - dist[0]!) : 0;
+  // Null when the device gave no distance at all (some bike trainers).
+  const known = (xs: readonly { distance?: number }[]): number[] => xs.flatMap((s) => (s.distance !== undefined ? [s.distance] : []));
+  const fromStatus = known(status);
+  const dist = fromStatus.length > 0 ? fromStatus : known(strokes);
+  const distance = dist.length > 0 ? Math.max(0, dist[dist.length - 1]! - dist[0]!) : strokes.length + status.length > 0 ? null : 0;
 
   const powers = resample(strokes, Math.floor(duration));
   const work = powers.reduce((sum, p) => sum + p, 0);

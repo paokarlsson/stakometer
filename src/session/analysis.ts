@@ -3,6 +3,7 @@
 import { resample } from '../model/resample';
 import type { SignatureParams } from '../model/signature';
 import { DEFAULT_WBAL, wbalSeries, type WbalOptions } from '../model/wbal';
+import { LBF_TO_N, torqueFrom } from '../sources/TrainingDevice';
 import type { Chunk, RunnerEvent, Session } from '../storage/types';
 import { targetAt } from '../workout/ramp';
 import type { TimelineSegment } from '../workout/schema';
@@ -48,6 +49,12 @@ export interface StrokeStats {
   avgStrokeRate: number | null;
   /** Median drag factor over the strokes; null when the source gives none. */
   dragFactor: number | null;
+  /** Average speed over the statuses that had one, m/s (bike); null when the device gives none. */
+  avgSpeed: number | null;
+  /** Average drive force over the strokes that had one, N (SkiErg over Bluetooth). */
+  avgForce: number | null;
+  /** Average crank torque over the samples with cadence, Nm (bike). */
+  avgTorque: number | null;
 }
 
 export interface SessionAnalysis {
@@ -82,6 +89,9 @@ export function strokeStats(chunks: readonly Chunk[]): StrokeStats {
     avgHeartRate: mean(status.flatMap((s) => (s.heartRate !== undefined && s.heartRate > 0 ? [s.heartRate] : []))),
     avgStrokeRate: mean(strokes.flatMap((s) => (s.strokeRate > 0 ? [s.strokeRate] : []))),
     dragFactor: median(strokes.flatMap((s) => (s.raw?.dragFactor !== undefined ? [s.raw.dragFactor] : []))),
+    avgSpeed: mean(status.flatMap((s) => (s.speed !== undefined ? [s.speed] : []))),
+    avgForce: mean(strokes.flatMap((s) => (s.raw?.avgDriveForce !== undefined ? [s.raw.avgDriveForce * LBF_TO_N] : []))),
+    avgTorque: mean(strokes.flatMap((s) => (s.power > 0 && s.strokeRate > 0 ? [torqueFrom(s.power, s.strokeRate)!] : []))),
   };
 }
 

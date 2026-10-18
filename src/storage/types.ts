@@ -1,5 +1,5 @@
 import type { FitnessSignature } from '../model/signature';
-import type { ConnectionState, Machine, StatusSample, StrokeSample } from '../sources/DataSource';
+import { sportOf, type ConnectionState, type Machine, type SourceKind, type Sport, type StatusSample, type StrokeSample } from '../sources/DataSource';
 import type { PlannedWorkout } from '../workout/plan';
 import type { TimelineSegment } from '../workout/schema';
 
@@ -8,8 +8,8 @@ export type SessionStatus = 'completed' | 'aborted';
 
 export interface SessionSummary {
   duration: number; // s
-  distance: number; // m
-  strokeCount: number;
+  distance: number | null; // m; null when the device gave no distance
+  strokeCount: number; // strokes, or samples from a bike trainer
   avgPower: number | null; // W, from the 1 Hz series; null when there were no strokes
   workKJ: number; // kJ, from the 1 Hz series
   /** Lowest W′ balance as a fraction of W′ (may be negative) and when; null without a signature. */
@@ -20,7 +20,9 @@ export interface Session {
   id: string;
   startedAt: string; // ISO 8601
   machine: Machine;
-  source: 'pm5' | 'simulator';
+  /** Missing on sessions saved before bike support; read it with sessionSport(). */
+  sport?: Sport;
+  source: SourceKind;
   mode: SessionMode;
   workoutId?: string;
   /** Copy of the planned workout when it came from an imported plan (plan.md §4.1). */
@@ -59,6 +61,8 @@ export interface Chunk {
   runner?: RunnerEvent[];
   rawLog?: string[];
 }
+
+export const sessionSport = (s: Pick<Session, 'sport' | 'machine'>): Sport => s.sport ?? sportOf(s.machine);
 
 export interface SessionStore {
   putSession(session: Session): Promise<void>;

@@ -1,6 +1,6 @@
 // Settings (spec §8.5): manual signature (§7.4), band and averaging, machine type,
 // W′ zones and Skiba constants, and JSON backup (§11).
-import { defaultPm5Signature, kOf, validateSignature, type FitnessSignature } from '../../model/signature';
+import { defaultSignature, isDeviceDefault, kOf, validateSignature, type FitnessSignature } from '../../model/signature';
 import type { Machine } from '../../sources/DataSource';
 import { exportBackup, importBackup, parseBackup } from '../../storage/backup';
 import type { WbalModel } from '../../model/wbal';
@@ -29,6 +29,7 @@ const MACHINE_LABEL: Record<Settings['machine'], string> = {
   skierg: 'SkiErg',
   rowerg: 'RowErg',
   bikeerg: 'BikeErg',
+  trainer: 'Cykeltrainer',
 };
 
 export const settingsView: View = (root, app) => {
@@ -36,8 +37,15 @@ export const settingsView: View = (root, app) => {
   const field = (label: string, input: HTMLElement, unit = '') =>
     h('label', { class: 'field' }, h('span', {}, label), h('span', { class: 'field-input' }, input, unit && h('span', { class: 'hint' }, unit)));
 
-  // --- Signature (§7.4) ---
-  const machine: Machine = app.settings.machine === 'auto' ? 'skierg' : app.settings.machine;
+  // --- Signature (§7.4), one per machine type: the bike's is kept apart from the SkiErg's ---
+  let machine: Machine = app.source ? app.machine() : app.settings.machine === 'auto' ? 'skierg' : app.settings.machine;
+  const sigMachine = h(
+    'select',
+    {},
+    ...(Object.keys(MACHINE_LABEL) as Settings['machine'][])
+      .filter((m): m is Machine => m !== 'auto')
+      .map((m) => h('option', { value: m, selected: m === machine }, MACHINE_LABEL[m])),
+  );
   const current = h('p', { class: 'hint' }, 'Laddar…');
   const pp = numberInput(0, '1');
   const cp = numberInput(0, '1');
@@ -67,14 +75,23 @@ export const settingsView: View = (root, app) => {
     showCurrent(signature);
   });
   const showCurrent = (sig: FitnessSignature): void => {
-    const origin = sig.id === 'pm5-default' ? 'standardvärden' : sig.source === 'test3p' ? `från test ${formatDate(sig.createdAt)}` : `inmatad ${formatDate(sig.createdAt)}`;
-    current.textContent = `Aktiv för PM5: PP ${Math.round(sig.pp)} W · CP ${Math.round(sig.cp)} W · W′ ${Math.round(sig.wPrime).toLocaleString('sv-SE')} J · k ${Math.round(kOf(sig))} s (${origin})`;
+    const origin = isDeviceDefault(sig) ? 'standardvärden' : sig.source === 'test3p' ? `från test ${formatDate(sig.createdAt)}` : `inmatad ${formatDate(sig.createdAt)}`;
+    current.textContent = `Aktiv för ${MACHINE_LABEL[sig.machine]}: PP ${Math.round(sig.pp)} W · CP ${Math.round(sig.cp)} W · W′ ${Math.round(sig.wPrime).toLocaleString('sv-SE')} J · k ${Math.round(kOf(sig))} s (${origin})`;
     pp.value = String(Math.round(sig.pp));
     cp.value = String(Math.round(sig.cp));
     wPrime.value = String(Math.round(sig.wPrime));
     updateK();
   };
-  void app.store.latestSignature(machine, false).then((sig) => showCurrent(sig ?? defaultPm5Signature(machine)));
+  const loadCurrent = (): void => {
+    const m = machine;
+    void app.store.latestSignature(m, false).then((sig) => m === machine && showCurrent(sig ?? defaultSignature(m)));
+  };
+  sigMachine.addEventListener('change', () => {
+    machine = sigMachine.value as Machine;
+    sigSaved.hidden = true;
+    loadCurrent();
+  });
+  loadCurrent();
 
   // --- Settings ---
   const s = app.settings;
@@ -83,7 +100,10 @@ export const settingsView: View = (root, app) => {
   const machineSelect = h(
     'select',
     {},
-    ...(Object.keys(MACHINE_LABEL) as Settings['machine'][]).map((m) => h('option', { value: m, selected: m === s.machine }, MACHINE_LABEL[m])),
+    // A trainer is recognised by itself; the choice is for what a PM5 is connected to.
+    ...(Object.keys(MACHINE_LABEL) as Settings['machine'][])
+      .filter((m) => m !== 'trainer')
+      .map((m) => h('option', { value: m, selected: m === s.machine }, MACHINE_LABEL[m])),
   );
   const calibrationSelect = h(
     'select',
@@ -156,6 +176,7 @@ export const settingsView: View = (root, app) => {
       'section',
       { class: 'card' },
       h('h2', {}, 'Fitness Signature'),
+      h('div', { class: 'fields' }, field('Träningsform', sigMachine)),
       current,
       h('div', { class: 'fields' }, field('PP', pp, 'W'), field('CP', cp, 'W'), field('W′', wPrime, 'J'), kText),
       h('div', { class: 'row' }, saveSig),
@@ -171,7 +192,7 @@ export const settingsView: View = (root, app) => {
         { class: 'fields' },
         field('Standardtolerans för målband', tolerance, '± %'),
         field('Drag i effektmedlet', avgStrokes),
-        field('Maskintyp', machineSelect),
+        field('Maskintyp (PM5)', machineSelect),
       ),
       h('p', { class: 'hint small' }, 'Passens intensitet räknas mot din signatur så att den beräknade W′-balansen inte går under lägsta W′. Bara arbete över CP justeras; vilor och testpass rörs inte.'),
       h('div', { class: 'fields' }, field('Anpassa passen', calibrationSelect), field('Lägsta W′', minWbal, '%')),
