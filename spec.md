@@ -61,7 +61,7 @@ Arbetet efter v1 står i [`plan.md`](plan.md) (beslut 2026-09-29). Där står oc
 
 **Senare eller aldrig:**
 
-- Stöd för RowErg och BikeErg (datamodellen ska dock klara flera maskintyper, se §5.1)
+- Stöd för RowErg och BikeErg (datamodellen ska dock klara flera maskintyper, se §5.1). Smarta cykeltrainers via Bluetooth finns sedan 2026-10-18, se §9.4.
 - Styrning av PM5 med CSAFE-kommandon, till exempel att programmera pass. Att *läsa* data via USB ingår i v1 (§9.1).
 - Backend, konton och synk
 - Stöd för iOS
@@ -581,6 +581,21 @@ Alla värden är little-endian. Tid anges i enheter om 0,01 s och distans i enhe
 
 **Tolkning:** Parse-funktionerna (Bluetooth: `DataView → objekt`, USB: CSAFE-ram → svar) är rena funktioner med enhetstester. Hex-fixtures från en riktig PM5 läggs i `tests/fixtures/` och spelas upp av `tests/fixtures.test.ts`.
 
+### 9.4 Cykeltrainer över Web Bluetooth (användarens beslut 2026-10-18)
+
+Till exempel Zwift Ride med Wahoo KICKR CORE Zwift One, och andra trainers som följer Bluetooth-standarden. Koden finns i `src/sources/bike/`.
+
+- **Bara läsning.** Appen prenumererar bara på notifieringar och skriver aldrig till trainern. FTMS Control Point `0x2AD9` begärs inte. Då kan Zwift vara anslutet samtidigt och styra motståndet, eftersom bara en app kan styra trainern.
+- **FTMS i första hand:** service `0x1826`, Indoor Bike Data `0x2AD2`. Bit 0 är inverterad: när den är 0 finns momentan hastighet. En post som är uppdelad på flera notifieringar ("More Data") slås ihop.
+- **Cycling Power som reserv:** service `0x1818`, Cycling Power Measurement `0x2A63`. Kadensen räknas från vevvarven, med överslag vid 65 536, och blir 0 när vevarna stått still i 3 s. Hastighet visas inte, eftersom den kräver en hjulomkrets som trainern inte anger.
+- **Utanför scope:** Zwift Rides växel- och styrknappar. De använder ett proprietärt protokoll.
+- **Datamodell:** Varje notifiering med effekt blir ett `StrokeSample`, där `strokeRate` är kadensen i rpm. Varje notifiering blir också ett `StatusSample` med `speed` (m/s), distans och puls när trainern skickar dem. Ett värde som saknas sparas inte och visas som "–".
+- **Gemensamt enhetslager:** `TrainingDevice` (`src/sources/TrainingDevice.ts`) ger normaliserade mätvärden från alla källor: effekt, kadens, hastighet, distans, tid, puls, kraft (SkiErg, N) och vridmoment (cykel, Nm, räknat från uppmätt effekt och kadens).
+- **Maskintyp och sporttyp:** Maskintypen är `trainer` och sporttypen är `bike`. Signaturen och testresultaten hålls isär från SkiErg. Cykelns standardsignatur är [FÖRSLAG] PP 700 W, CP 200 W och W′ 15 000 J.
+- **Återanslutning:** Samma som för PM5 (1, 2, 4, 8 och 16 s). Om alla försök misslyckas visas "frånkopplad" och knappen Återanslut.
+
+[VERIFIERA] mot en riktig KICKR CORE: vilka FTMS-fält den skickar och om den kan vara ansluten till Zwift och appen samtidigt.
+
 ---
 
 ## 10. Simulator
@@ -602,6 +617,8 @@ Simulatorn implementerar `DataSource` och används med `SimClock`.
 **Dragfaktor:** Varje drag har `raw.dragFactor`, standard 110. Den ställs in på startsidan innan simulatorn ansluts, så att varningarna i §7.3 går att prova.
 
 **Tidsacceleration:** 1×, 5× och 20×.
+
+**Cykelsimulator** (`src/sources/bike/simulator.ts`) väljs med "Maskin" på startsidan. Den bygger riktiga FTMS-bytearrayer två gånger per sekund och skickar dem genom samma parser som trainern. Kadensen är `clamp(80 + 0,05 · (p − 150), 60, 110)` rpm plus brus, och 200 W motsvarar ungefär 32 km/h. Den skickar ingen puls. Lägena är desamma som ovan, och i `manual` betyder mellanslag att användaren slutar trampa.
 
 ---
 

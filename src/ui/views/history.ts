@@ -4,6 +4,7 @@ import type { View } from '../app';
 import { pageHeader } from '../components';
 import { h } from '../dom';
 import { formatDate, formatDistance, formatDuration, formatPower } from '../format';
+import { sourceLabel } from '../sport';
 
 const MODE_LABEL: Record<Session['mode'], string> = { free: 'Fri åkning', workout: 'Pass', test: 'Test' };
 
@@ -47,7 +48,7 @@ export const historyView: View = (root, app) => {
               h('td', { class: 'num' }, s.summary ? formatDistance(s.summary.distance) : '–'),
               h('td', { class: 'num' }, formatPower(s.summary?.avgPower)),
               h('td', { class: 'num' }, s.summary?.minWbal ? `${Math.round(Math.max(0, s.summary.minWbal.fraction) * 100)} %` : '–'),
-              h('td', {}, s.source === 'pm5' ? 'PM5' : 'Simulator'),
+              h('td', {}, sourceLabel(s)),
               h('td', {}, h('span', { class: s.status === 'completed' ? 'status-tag ok' : 'status-tag bad' }, s.status === 'completed' ? 'Klart' : 'Avbrutet')),
             ),
           )),

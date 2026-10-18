@@ -1,9 +1,11 @@
 import { RealClock, type Clock, type SimSpeed } from '../core/clock';
 import { Emitter } from '../core/events';
-import { defaultPm5Signature, simulatorSignature, type FitnessSignature } from '../model/signature';
+import { defaultSignature, simulatorSignature, type FitnessSignature } from '../model/signature';
 import { analyzeSession } from '../session/analysis';
 import { testResultFrom } from '../session/testResults';
-import type { ConnectionState, DataSource, Machine } from '../sources/DataSource';
+import type { BikeSource } from '../sources/bike/ble';
+import type { BikeSimulator } from '../sources/bike/simulator';
+import { sportOf, type ConnectionState, type DataSource, type Machine, type Sport } from '../sources/DataSource';
 import type { Pm5Source } from '../sources/pm5/ble';
 import { UsbPm5Source } from '../sources/pm5/usb';
 import { RawLog } from '../sources/rawlog';
@@ -24,6 +26,7 @@ export interface SimChoices {
   speed: SimSpeed;
   mode: SimMode;
   dragFactor: number;
+  sport: Sport;
 }
 
 /** Tears down listeners and timers when leaving a view. */
@@ -40,7 +43,7 @@ export class App {
   workout: Workout | null = null;
   /** The list the workout was chosen from; null when chosen on the start page itself. */
   category: WorkoutCategory | null = null;
-  sim: SimChoices = { speed: 1, mode: 'followTarget', dragFactor: DEFAULT_DRAG_FACTOR };
+  sim: SimChoices = { speed: 1, mode: 'followTarget', dragFactor: DEFAULT_DRAG_FACTOR, sport: 'skierg' };
   /** Current target in W, read by the simulator. Set by the live view. */
   target: () => number | null = () => null;
   /** Duration of the maximal effort in progress, read by the simulator's fatigue mode. */
@@ -62,12 +65,27 @@ export class App {
     readonly navigate: (view: ViewName) => void,
   ) {}
 
-  get simulator(): Simulator | null {
-    return this.source?.kind === 'simulator' ? (this.source as Simulator) : null;
+  get simulator(): Simulator | BikeSimulator | null {
+    return this.source?.kind === 'simulator' ? (this.source as Simulator | BikeSimulator) : null;
   }
 
   get pm5(): Pm5Source | UsbPm5Source | null {
     return this.source?.kind === 'pm5' ? (this.source as Pm5Source | UsbPm5Source) : null;
+  }
+
+  get trainer(): BikeSource | null {
+    return this.source?.kind === 'trainer' ? (this.source as BikeSource) : null;
+  }
+
+  /** The connected Bluetooth device, PM5 or trainer, when it can be reconnected after a drop. */
+  get reconnectable(): { reconnect(): Promise<void> } | null {
+    const s = this.source as Partial<{ reconnect(): Promise<void> }> | null;
+    return s && typeof s.reconnect === 'function' ? (s as { reconnect(): Promise<void> }) : null;
+  }
+
+  /** Training form of the machine in use. */
+  sport(): Sport {
+    return sportOf(this.machine());
   }
 
   /**
@@ -91,10 +109,15 @@ export class App {
     this.settings = settings;
   }
 
-  /** The machine in use: the manual choice in settings, else what the PM reports, else SkiErg (spec §8.5). */
+  /**
+   * The machine in use: a bike trainer is always 'trainer'; for a PM5 the manual choice in
+   * settings, else what the PM reports, else SkiErg (spec §8.5).
+   */
   machine(): Machine {
+    const reported = this.source?.machine() ?? null;
+    if (reported === 'trainer') return reported;
     const choice = this.settings.machine;
-    return choice !== 'auto' ? choice : (this.source?.machine() ?? 'skierg');
+    return choice !== 'auto' ? choice : (reported ?? 'skierg');
   }
 
   /**
@@ -108,7 +131,7 @@ export class App {
     const machine = this.machine();
     const simulated = source.kind === 'simulator';
     const stored = await this.store.latestSignature(machine, simulated);
-    return stored ?? (simulated ? simulatorSignature(machine) : defaultPm5Signature(machine));
+    return stored ?? (simulated ? simulatorSignature(machine) : defaultSignature(machine));
   }
 
   /** The active signature, or the PM5's when nothing is connected (USB is the default). */
@@ -116,7 +139,7 @@ export class App {
     const active = await this.activeSignature();
     if (active) return active;
     const machine = this.machine();
-    return (await this.store.latestSignature(machine, false)) ?? defaultPm5Signature(machine);
+    return (await this.store.latestSignature(machine, false)) ?? defaultSignature(machine);
   }
 
   /** After a session: stores the test result of a completed test (spec §7.3). */

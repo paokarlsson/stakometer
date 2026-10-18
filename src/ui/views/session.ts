@@ -6,14 +6,15 @@ import { analyzeSession, intervalRows, strokeStats } from '../../session/analysi
 import { summarize } from '../../session/summary';
 import { wbalOptions } from '../../storage/settings';
 import { dragFactorDiffers, MIN_TEST_LENGTHS, mixedDragFactors, previousTest, suggestSignature } from '../../session/testResults';
-import type { Session } from '../../storage/types';
+import { sessionSport, type Session } from '../../storage/types';
 import { workoutById } from '../../workout/builtin';
 import { heartRateShare } from '../../workout/plan';
 import type { View } from '../app';
 import { sessionChart, signatureChart } from '../charts';
 import { pageHeader, stat, wallClock } from '../components';
 import { h } from '../dom';
-import { formatDate, formatDistance, formatDuration, formatKJ, formatPower, testName } from '../format';
+import { formatDate, formatDistance, formatDuration, formatKJ, formatPower, formatSpeed, formatWhole, testName } from '../format';
+import { sourceLabel, SPORT_LABELS } from '../sport';
 import { icon } from '../icons';
 
 const pct = (f: number): string => `${Math.round(f * 100)} %`;
@@ -43,8 +44,9 @@ export const sessionView: View = (root, app) => {
     // Recomputed from raw data, so sessions saved by older versions show every value too.
     const s = summarize(chunks, session.signatureSnapshot, wbalOptions(app.settings));
     const extra = strokeStats(chunks);
-    const title = session.planned?.name ?? workoutById(session.workoutId)?.name ?? (session.mode === 'free' ? 'Fri åkning' : 'Pass');
-    const km = `${(s.distance / 1000).toLocaleString('sv-SE', { maximumFractionDigits: 1 })} km`;
+    const labels = SPORT_LABELS[sessionSport(session)];
+    const title = session.planned?.name ?? workoutById(session.workoutId)?.name ?? (session.mode === 'free' ? labels.free : 'Pass');
+    const km = s.distance === null ? '– km' : `${(s.distance / 1000).toLocaleString('sv-SE', { maximumFractionDigits: 1 })} km`;
 
     const tile = (label: string, value: string, note?: string): HTMLElement => {
       const t = stat(label, value);
@@ -61,8 +63,10 @@ export const sessionView: View = (root, app) => {
       tile('Arbete', `${Math.round(s.workKJ).toLocaleString('sv-SE')} kJ`),
       tile('Lägsta W′', s.minWbal ? pct(Math.max(0, s.minWbal.fraction)) : '–', s.minWbal ? `vid ${formatDuration(s.minWbal.t)}` : undefined),
       tile('Snittpuls', extra.avgHeartRate === null ? '–' : String(Math.round(extra.avgHeartRate)), hrShare ? `(${pct(hrShare.fraction)})` : undefined),
-      tile('Dragtakt', extra.avgStrokeRate === null ? '–' : String(Math.round(extra.avgStrokeRate))),
-      tile('Dragfaktor', extra.dragFactor === null ? '–' : String(Math.round(extra.dragFactor))),
+      tile(labels.cadence, formatWhole(extra.avgStrokeRate)),
+      tile(labels.force, formatWhole(labels.showDragFactor ? extra.avgForce : extra.avgTorque)),
+      labels.showSpeed ? tile('Hastighet (km/h)', formatSpeed(extra.avgSpeed)) : null,
+      labels.showDragFactor ? tile('Dragfaktor', formatWhole(extra.dragFactor)) : null,
     );
 
     const rows = intervalRows(analysis.segments);
@@ -109,7 +113,7 @@ export const sessionView: View = (root, app) => {
           'div',
           { class: 'row small' },
           `${formatDate(session.startedAt)} · ${formatDuration(s.duration)} · ${km}`,
-          h('span', { class: 'status-tag' }, session.source === 'pm5' ? 'PM5' : 'Simulator'),
+          h('span', { class: 'status-tag' }, sourceLabel(session)),
           h('span', { class: session.status === 'completed' ? 'status-tag ok' : 'status-tag bad' }, session.status === 'completed' ? 'Klart' : 'Avbrutet'),
           session.planned ? h('span', { class: 'status-tag' }, `Planerat ${session.planned.date}`) : null,
         ),

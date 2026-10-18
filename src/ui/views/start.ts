@@ -1,6 +1,6 @@
 // Start page (spec §8.1): connection status, today's planned workout, and tiles for the lists of
 // workouts, history, the signature, the plan import and the backup.
-import { kOf } from '../../model/signature';
+import { isDeviceDefault, kOf } from '../../model/signature';
 import { TEST_DURATIONS } from '../../session/testResults';
 import { exportBackup } from '../../storage/backup';
 import { BUILTIN_WORKOUTS } from '../../workout/builtin';
@@ -109,10 +109,11 @@ export const startView: View = (root, app) => {
     const defaults: Record<string, string> = {
       'simulator-default': ' · simulatorns standardvärden',
       'pm5-default': ' · standardvärden – gör test eller mata in egna',
+      'trainer-default': ' · cykelns standardvärden – gör test eller mata in egna',
     };
     signature.detail.textContent =
       `PP ${Math.round(sig.pp)} W · CP ${Math.round(sig.cp)} W · W′ ${formatKJ(sig.wPrime)} kJ · k ${Math.round(kOf(sig))} s` + (defaults[sig.id] ?? '');
-    signature.detail.classList.toggle('warn-text', sig.id === 'pm5-default');
+    signature.detail.classList.toggle('warn-text', isDeviceDefault(sig));
   };
 
   const update = (): void => {

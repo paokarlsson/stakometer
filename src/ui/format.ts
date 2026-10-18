@@ -8,9 +8,19 @@ export function formatDuration(seconds: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
 }
 
-export function formatDistance(metres: number): string {
-  return `${Math.round(metres).toLocaleString('sv-SE')} m`;
+export function formatDistance(metres: number | null | undefined): string {
+  return metres === null || metres === undefined ? '–' : `${Math.round(metres).toLocaleString('sv-SE')} m`;
 }
+
+/** 8.33 m/s → "30,0" (km/h). */
+export function formatSpeed(metresPerSecond: number | null | undefined): string {
+  return metresPerSecond === null || metresPerSecond === undefined
+    ? '–'
+    : (metresPerSecond * 3.6).toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+/** A whole number, or "–" when missing. */
+export const formatWhole = (v: number | null | undefined): string => (v === null || v === undefined ? '–' : String(Math.round(v)));
 
 export function formatPower(watts: number | null | undefined): string {
   return watts === null || watts === undefined ? '–' : `${Math.round(watts)} W`;

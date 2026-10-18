@@ -142,8 +142,12 @@ describe('result view (§8.3)', () => {
       { t: 2, pmElapsed: 2, distance: 0, heartRate: 160 },
       { t: 3, pmElapsed: 3, distance: 0 },
     ];
-    expect(strokeStats([c])).toEqual({ avgHeartRate: 155, avgStrokeRate: 32, dragFactor: 112 });
-    expect(strokeStats([chunk([200], [])])).toEqual({ avgHeartRate: null, avgStrokeRate: 30, dragFactor: null });
+    expect(strokeStats([c])).toMatchObject({ avgHeartRate: 155, avgStrokeRate: 32, dragFactor: 112 });
+    expect(strokeStats([chunk([200], [])])).toMatchObject({ avgHeartRate: null, avgStrokeRate: 30, dragFactor: null });
+  });
+
+  it('gives null for speed and force when the source sends none', () => {
+    expect(strokeStats([chunk([200], [])])).toMatchObject({ avgSpeed: null, avgForce: null });
   });
 });
 

@@ -3,6 +3,7 @@
 // characteristics are [VERIFY] and optional: only stroke data is required.
 import type { Clock } from '../../core/clock';
 import { Emitter } from '../../core/events';
+import { retryConnect } from '../bleReconnect';
 import { BaseSource, type Machine, type RawNotification } from '../DataSource';
 import { CHAR, MACHINE_TYPE_SKIERG, MULTIPLEX_ID_ADDITIONAL_STROKE, SAMPLE_RATE, SERVICE } from './uuids';
 import {
@@ -17,8 +18,6 @@ import {
   type GeneralStatus,
   type StrokeData,
 } from './parse';
-
-const RECONNECT_DELAYS_S = [1, 2, 4, 8, 16];
 
 export class Pm5Source extends BaseSource {
   readonly kind = 'pm5' as const;
@@ -198,19 +197,12 @@ export class Pm5Source extends BaseSource {
     void this.reconnect();
   };
 
-  private async reconnect(): Promise<void> {
+  /** Also called from the UI ("Återanslut") after automatic reconnecting gave up. */
+  async reconnect(): Promise<void> {
+    if (!this.device || this.connectionState === 'reconnecting') return;
     this.setConnection('reconnecting');
-    for (const delay of RECONNECT_DELAYS_S) {
-      await new Promise((r) => setTimeout(r, delay * 1000));
-      if (this.userDisconnect) return;
-      try {
-        await this.setup();
-        this.setConnection('connected');
-        return;
-      } catch (err) {
-        console.warn('PM5 reconnect failed:', err);
-      }
-    }
-    this.setConnection('disconnected');
+    const ok = await retryConnect(() => this.setup(), () => this.userDisconnect, 'PM5');
+    if (this.userDisconnect) return;
+    this.setConnection(ok ? 'connected' : 'disconnected');
   }
 }

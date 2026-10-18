@@ -8,6 +8,7 @@ import { Resampler, STALE_AFTER_S } from '../model/resample';
 import type { FitnessSignature } from '../model/signature';
 import { DEFAULT_WBAL, timeToEmpty, wbalStep, type WbalOptions } from '../model/wbal';
 import type { DataSource, Machine, StatusSample } from '../sources/DataSource';
+import { measurements, type Measurement } from '../sources/TrainingDevice';
 import type { Session, SessionMode, SessionStore } from '../storage/types';
 import type { PlannedWorkout } from '../workout/plan';
 import type { TimelineSegment } from '../workout/schema';
@@ -47,6 +48,8 @@ export class LiveSession {
   wbal: number | null;
   minWbal: { value: number; t: number } | null = null;
   lastStatus: StatusSample | null = null;
+  /** Latest normalized values from the device (cadence, speed, force, torque, heart rate). */
+  lastMeasurement: Measurement | null = null;
 
   private readonly resampler = new Resampler();
   private maxSum = 0;
@@ -103,12 +106,13 @@ export class LiveSession {
         this.lastStrokeRate = s.strokeRate;
         if (s.raw?.dragFactor !== undefined) this.lastDragFactor = s.raw.dragFactor;
         this.power.push({ t, value: this.currentPowerAvg() });
-        this.strokeDistance = { first: this.strokeDistance?.first ?? s.distance, last: s.distance };
+        if (s.distance !== undefined) this.strokeDistance = { first: this.strokeDistance?.first ?? s.distance, last: s.distance };
       }),
       this.source.onStatus((s) => {
         this.lastStatus = s;
-        this.statusDistance = { first: this.statusDistance?.first ?? s.distance, last: s.distance };
+        if (s.distance !== undefined) this.statusDistance = { first: this.statusDistance?.first ?? s.distance, last: s.distance };
       }),
+      measurements(this.source, (m) => (this.lastMeasurement = m)),
       this.runner.stateChanged.on((state) => this.recorder.mark(state)),
     ];
     this.recorder.mark('countdown');
@@ -159,10 +163,13 @@ export class LiveSession {
     return this.lastStatus?.strokeRate ?? this.lastStrokeRate;
   }
 
-  /** Metres since the start, counted like the summary (§8.3): PM5 distance is cumulative for its own workout, so the difference counts. */
-  distance(): number {
+  /**
+   * Metres since the start, counted like the summary (§8.3): PM5 distance is cumulative for its own
+   * workout, so the difference counts. Null when the device gives no distance (some bike trainers).
+   */
+  distance(): number | null {
     const span = this.statusDistance ?? this.strokeDistance;
-    return span ? Math.max(0, span.last - span.first) : 0;
+    return span ? Math.max(0, span.last - span.first) : null;
   }
 
   /** Average of the 1 Hz power since t = 0, null before the first second. */
@@ -178,6 +185,27 @@ export class LiveSession {
   /** Drag factor from the latest stroke that had one, null when the source gives none. */
   dragFactor(): number | null {
     return this.lastDragFactor;
+  }
+
+  /** A value from the latest measurement, null when missing or older than STALE_AFTER_S. */
+  private fresh(key: 'speed' | 'force' | 'torque'): number | null {
+    const m = this.lastMeasurement;
+    return m && this.clock.now() - m.ts <= STALE_AFTER_S ? m[key] : null;
+  }
+
+  /** m/s, bike only; null when the device gives none. */
+  speed(): number | null {
+    return this.fresh('speed');
+  }
+
+  /** Average drive force of the latest stroke, N (SkiErg over Bluetooth). */
+  force(): number | null {
+    return this.sessionTime() - this.lastStrokeT > STALE_AFTER_S ? null : this.fresh('force');
+  }
+
+  /** Crank torque, Nm (bike), from the measured power and cadence. */
+  torque(): number | null {
+    return this.fresh('torque');
   }
 
   heartRate(): number | null {

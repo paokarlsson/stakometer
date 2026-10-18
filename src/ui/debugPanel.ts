@@ -9,7 +9,7 @@ const SHOWN_LINES = 40;
 function formatLine(e: RawLogEntry): string | null {
   const t = e.ts.toFixed(2).padStart(8);
   if (e.kind === 'raw') return `${t}  ${e.char.padEnd(5)} ${e.hex}`;
-  if (e.kind === 'stroke') return `${t}  → drag #${e.strokeCount}: ${e.power} W, ${e.strokeRate}/min, ${e.distance.toFixed(1)} m`;
+  if (e.kind === 'stroke') return `${t}  → drag #${e.strokeCount}: ${e.power} W, ${e.strokeRate}/min, ${e.distance?.toFixed(1) ?? '–'} m`;
   return null; // statuses arrive 4–10 times per second; they are in the file but not shown
 }
 

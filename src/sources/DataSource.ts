@@ -1,24 +1,34 @@
 import { Emitter, type Unsubscribe } from '../core/events';
+import { measurements, type Measurement, type TrainingDevice } from './TrainingDevice';
 
-export type Machine = 'skierg' | 'rowerg' | 'bikeerg';
+/** 'trainer' is a smart bike trainer over Bluetooth (FTMS or Cycling Power). */
+export type Machine = 'skierg' | 'rowerg' | 'bikeerg' | 'trainer';
+
+/** Training form; picks the labels and units in the UI. */
+export type Sport = 'skierg' | 'bike';
+
+export const sportOf = (machine: Machine): Sport => (machine === 'bikeerg' || machine === 'trainer' ? 'bike' : 'skierg');
+
+/** One power sample: a stroke from the PM5, or one notification from a bike trainer. */
 
 export interface StrokeSample {
   ts: number; // Clock.now() when received
-  pmElapsed: number; // s, from PM5
+  pmElapsed: number; // s, from the device (a trainer without its own clock: since connect)
   power: number; // W, power for the stroke
-  strokeRate: number; // strokes/min
-  strokeCount: number;
-  distance: number; // m, total
+  strokeRate: number; // strokes/min, or crank rpm on a bike; 0 when unknown
+  strokeCount: number; // strokes, or samples on a bike
+  distance?: number; // m, total; missing when the device gives none
   raw?: Record<string, number>; // other parsed fields, stored unchanged
 }
 
 export interface StatusSample {
   ts: number;
   pmElapsed: number;
-  distance: number;
-  strokeRate?: number;
-  heartRate?: number; // only when the PM5 delivers a valid value
+  distance?: number; // missing when the device gives none (some bike trainers)
+  strokeRate?: number; // strokes/min, or crank rpm on a bike
+  heartRate?: number; // only when the device delivers a valid value
   paceSecPer500?: number;
+  speed?: number; // m/s, bike trainers only
 }
 
 export type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';
@@ -31,8 +41,10 @@ export interface RawNotification {
   hex: string;
 }
 
+export type SourceKind = 'pm5' | 'trainer' | 'simulator';
+
 export interface DataSource {
-  readonly kind: 'pm5' | 'simulator';
+  readonly kind: SourceKind;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   onStroke(cb: (s: StrokeSample) => void): Unsubscribe;
@@ -42,8 +54,8 @@ export interface DataSource {
 }
 
 /** Shared listener plumbing for DataSource implementations. */
-export abstract class BaseSource implements DataSource {
-  abstract readonly kind: 'pm5' | 'simulator';
+export abstract class BaseSource implements TrainingDevice {
+  abstract readonly kind: SourceKind;
   protected readonly strokes = new Emitter<StrokeSample>();
   protected readonly statuses = new Emitter<StatusSample>();
   protected readonly connections = new Emitter<ConnectionState>();
@@ -63,6 +75,10 @@ export abstract class BaseSource implements DataSource {
 
   onConnection(cb: (c: ConnectionState) => void): Unsubscribe {
     return this.connections.on(cb);
+  }
+
+  onMeasurement(cb: (m: Measurement) => void): Unsubscribe {
+    return measurements(this, cb);
   }
 
   get state(): ConnectionState {

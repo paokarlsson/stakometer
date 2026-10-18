@@ -163,6 +163,7 @@ Fortsätter numreringen i spec §12.
 | 5 | Import av planerade pass med `id`, `date`, `calibration`, `athlete`, beskrivningar och block (klart 2026-09-30) | §4.1 |
 | 6 | Fånga mer: puls via PM5 och pulsband, RR-intervall, kraftkurva som rådata | §5 |
 | 7 | Breakthroughs inom passet | §6 |
+| – | Smart cykeltrainer (FTMS / Cycling Power) via Bluetooth, bara läsning (2026-10-18) | spec §9.4 |
 
 ## 8. Öppet
 
