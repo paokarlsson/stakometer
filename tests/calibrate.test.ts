@@ -15,7 +15,7 @@ describe('plannedMinWbal', () => {
   });
 
   it('never drops for work at or below CP', () => {
-    expect(plannedMinWbal(timelineOf('2x15-threshold'), sig).fraction).toBe(1);
+    expect(plannedMinWbal(timelineOf('30min-steady'), sig).fraction).toBe(1);
   });
 });
 

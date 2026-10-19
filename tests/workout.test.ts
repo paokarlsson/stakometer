@@ -96,6 +96,17 @@ describe('added standard workouts', () => {
     expect(byId('10x3-hard').filter((s) => s.kind === 'interval')).toHaveLength(10);
   });
 
+  it('2×15 min: five 10 s impulses in each interval, one in the middle of every 3 min part', () => {
+    const t = byId('2x15-threshold');
+    const impulses = t.filter((s) => s.label === 'Impuls');
+    expect(impulses).toHaveLength(10);
+    expect(impulses.every((s) => s.end - s.start === 10 && s.targetW === 300)).toBe(true);
+    expect(impulses.map((s) => s.start)).toEqual([85, 265, 445, 625, 805, 1165, 1345, 1525, 1705, 1885]);
+    expect(impulses[7]!.block).toBe('Intervall 2/2 · Del 3/5');
+    expect(t.filter((s) => s.label === 'Tröskel').every((s) => s.targetW === 190)).toBe(true);
+    expect(t.filter((s) => s.kind === 'rest')).toEqual([expect.objectContaining({ start: 900, end: 1080, targetW: 80 })]);
+  });
+
   it('3×10 min 40/20: three blocks of 10 × 40 s with 20 s between, 3 min between blocks', () => {
     const t = byId('3x10-40-20');
     const hard = t.filter((s) => s.kind === 'interval');

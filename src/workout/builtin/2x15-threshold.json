@@ -3,11 +3,29 @@
   "name": "2×15 min",
   "segments": [
     {
-      "kind": "interval",
-      "duration": 900,
-      "target": { "pctCP": 95 },
+      "kind": "block",
+      "label": "Intervall",
       "repeat": 2,
-      "rest": { "duration": 180, "target": { "pctCP": 40 } }
+      "rest": { "duration": 180, "target": { "pctCP": 40 } },
+      "segments": [
+        {
+          "kind": "block",
+          "label": "Del",
+          "repeat": 5,
+          "segments": [
+            { "kind": "interval", "label": "Tröskel", "duration": 85, "target": { "pctCP": 95 } },
+            {
+              "kind": "interval",
+              "label": "Impuls",
+              "description": "Kraftfull impuls i 10 s, sedan tillbaka till tröskelfart.",
+              "duration": 10,
+              "target": { "pctCP": 150 },
+              "tolerance": 0.1
+            },
+            { "kind": "interval", "label": "Tröskel", "duration": 85, "target": { "pctCP": 95 } }
+          ]
+        }
+      ]
     }
   ]
 }
