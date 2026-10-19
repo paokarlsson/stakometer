@@ -7,6 +7,7 @@ import type { SessionAnalysis } from '../session/analysis';
 import type { Session } from '../storage/types';
 import { targetAt } from '../workout/ramp';
 import { formatDuration } from './format';
+import { uiScale } from './live/canvas';
 
 const css = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -25,8 +26,8 @@ const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 const axisStyle = (): Partial<uPlot.Axis> => ({
   stroke: css('--muted'),
-  font: `15px ${FONT}`,
-  labelFont: `600 15px ${FONT}`,
+  font: `${Math.round(15 * uiScale())}px ${FONT}`,
+  labelFont: `600 ${Math.round(15 * uiScale())}px ${FONT}`,
   grid: { stroke: css('--chart-grid'), width: 1 },
   ticks: { stroke: css('--chart-grid'), width: 1 },
 });
@@ -49,13 +50,13 @@ export function sessionChart(el: HTMLElement, session: Session, a: SessionAnalys
   return mount(el, (width) => {
     const opts: uPlot.Options = {
       width,
-      height: 380,
+      height: 380 * uiScale(),
       cursor: { drag: { x: true, y: false } },
       scales: { x: { time: false }, pct: { range: [Math.min(0, ...wbalPct.map((v) => v ?? 0)), 100] } },
       axes: [
         { ...axisStyle(), values: (_u, vals) => vals.map((v) => formatDuration(v)) },
-        { ...axisStyle(), label: 'Effekt (W)', size: 64 },
-        { ...axisStyle(), scale: 'pct', side: 1, label: 'W′-balans (%)', grid: { show: false }, size: 64 },
+        { ...axisStyle(), label: 'Effekt (W)', size: 64 * uiScale() },
+        { ...axisStyle(), scale: 'pct', side: 1, label: 'W′-balans (%)', grid: { show: false }, size: 64 * uiScale() },
       ],
       series: [
         { label: 'Tid', value: (_u, v) => (v === null ? '–' : formatDuration(v)) },
@@ -103,12 +104,12 @@ export function signatureChart(el: HTMLElement, points: readonly { t: number; p:
     return new uPlot(
       {
         width,
-        height: 340,
+        height: 340 * uiScale(),
         scales: { x: { time: false, distr: 3 } },
         axes: [
           // Keep every tick: uPlot's log axis otherwise drops those not starting with 1.
           { ...axisStyle(), splits: () => ticks, filter: (_u, splits) => splits, values: (_u, vals) => vals.map((v) => formatDuration(v)) },
-          { ...axisStyle(), label: 'Effekt (W)', size: 64 },
+          { ...axisStyle(), label: 'Effekt (W)', size: 64 * uiScale() },
         ],
         series,
       },

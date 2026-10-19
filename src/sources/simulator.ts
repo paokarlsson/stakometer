@@ -53,6 +53,18 @@ export const baseStrokeRate = (power: number): number => clamp(28 + 0.06 * power
 /** Concept2 relation between power and speed: P = 2.80 · v³. */
 export const speedFromPower = (power: number): number => (power > 0 ? Math.cbrt(power / 2.8) : 0);
 
+/** Simulated heart rate: rest and the level it settles at around 1.15 × CP, bpm. */
+const HR_REST = 65;
+const HR_TOP = 180;
+/** Time constant of the heart rate's response to power, s. */
+const HR_TAU_S = 30;
+
+/** One step of the simulated heart rate towards the level for `power` (first-order lag). */
+export function heartRateStep(hr: number, power: number, cp: number, dt: number): number {
+  const level = HR_REST + (HR_TOP - HR_REST) * clamp(power / (1.15 * cp), 0, 1.1);
+  return hr + (level - hr) * (1 - Math.exp(-dt / HR_TAU_S));
+}
+
 /** Deterministic PRNG (mulberry32) for reproducible simulations. */
 export function seededRandom(seed: number): () => number {
   let a = seed >>> 0;
@@ -97,6 +109,7 @@ export class Simulator extends BaseSource {
   private lastRate = 0;
   private strokeCount = 0;
   private distance = 0;
+  private heartRate = HR_REST;
 
   constructor(
     private readonly clock: Clock,
@@ -122,6 +135,7 @@ export class Simulator extends BaseSource {
     this.lastStrokeAt = -Infinity;
     this.strokeCount = 0;
     this.distance = 0;
+    this.heartRate = HR_REST;
     this.trueWbal = this.trueSignature.wPrime;
     this.setConnection('connected');
     if (this.tickMs > 0) this.timer = setInterval(() => this.advance(this.clock.now()), this.tickMs);
@@ -222,6 +236,7 @@ export class Simulator extends BaseSource {
     const speed = moving ? speedFromPower(this.lastPower) : 0;
     this.trueWbal = wbalStep(this.trueWbal, moving ? this.lastPower : 0, this.trueSignature, STATUS_INTERVAL_S);
     this.distance += speed * STATUS_INTERVAL_S;
+    this.heartRate = heartRateStep(this.heartRate, moving ? this.lastPower : 0, this.trueSignature.cp, STATUS_INTERVAL_S);
     this.nextStatusAt = t + STATUS_INTERVAL_S;
     this.statuses.emit({
       ts: t,
@@ -229,6 +244,7 @@ export class Simulator extends BaseSource {
       distance: this.distance,
       strokeRate: moving ? Math.round(this.lastRate) : 0,
       paceSecPer500: speed > 0 ? 500 / speed : undefined,
+      heartRate: Math.round(this.heartRate),
     });
   }
 }

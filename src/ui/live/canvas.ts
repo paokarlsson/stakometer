@@ -23,6 +23,7 @@ export interface Theme {
   neutral: string;
   mpa: string;
   cp: string;
+  hr: string;
 }
 
 export function readTheme(el: Element): Theme {
@@ -43,8 +44,18 @@ export function readTheme(el: Element): Theme {
     neutral: v('--text'),
     mpa: v('--chart-mpa'),
     cp: v('--chart-cp'),
+    hr: v('--chart-hr'),
   };
 }
+
+/** How much the page's text has grown from its 17 px base (large screens, see style.css); at least 1. */
+export function uiScale(): number {
+  return Math.max(1, (parseFloat(getComputedStyle(document.documentElement).fontSize) || 17) / 17);
+}
+
+/** Heart rate scale on the right axis, bpm; the top grows if the heart rate goes above it. */
+const HR_MIN = 60;
+const HR_MAX = 200;
 
 /** Initial y scale per session: max(highest target × 1.4, CP × 1.5), or 400 W with neither. */
 export function yMaxFor(highestTarget: number | null, cp: number | null): number {
@@ -60,12 +71,19 @@ export class LiveChart {
   private height = 0;
   /** Text size in px, from the chart height. */
   private fs = 16;
+  /** Line widths and marks relative to the page's text size, which grows on large screens. */
+  private k = 1;
   private pad = { top: 40, right: 16, bottom: 34, left: 56 };
+  private hrMax = HR_MAX;
+  /** True once heart rate has come in; the right axis is kept from then on. */
+  private hasHr = false;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     /** The scale is fixed per session, but grows (never shrinks) if power goes above it. */
     private yMax: number,
+    /** Draws heart rate with its own axis on the right, when the device delivers it. */
+    private readonly showHr = true,
   ) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D saknas');
@@ -85,6 +103,10 @@ export class LiveChart {
     const now = live.sessionTime();
     const t0 = now - WINDOW_S;
     this.growScale(live, t0);
+    if (this.showHr && !this.hasHr && live.hrSeries.length > 0) {
+      this.hasHr = true;
+      this.layout();
+    }
 
     ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, this.width, this.height);
@@ -99,12 +121,13 @@ export class LiveChart {
     const cp = live.signature?.cp;
     if (cp !== undefined) this.refLine(cp, theme.cp, `CP ${Math.round(cp)}`, [2, 4]);
     this.drawBoundaries(live, now);
+    if (this.hasHr) this.drawHeartRate(live, t0, now);
     this.drawMpa(live.mpaSeries, t0, now, live.mpa());
     this.drawPower(live, t0, now);
 
     // Now line
     ctx.strokeStyle = theme.text;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 * this.k;
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(xNow, this.pad.top - 10);
@@ -120,8 +143,14 @@ export class LiveChart {
     this.canvas.width = Math.round(this.width * dpr);
     this.canvas.height = Math.round(this.height * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.fs = Math.round(Math.min(24, Math.max(14, this.height / 26)));
-    this.pad = { top: this.fs * 2.6, right: 16, bottom: this.fs * 2, left: this.fs * 3.6 };
+    this.k = uiScale();
+    this.fs = Math.round(Math.min(24 * this.k, Math.max(Math.min(14, this.height / 18), this.height / 26)));
+    this.layout();
+  }
+
+  private layout(): void {
+    const right = this.hasHr ? this.fs * 3 : 16 * this.k;
+    this.pad = { top: this.fs * 2.6, right, bottom: this.fs * 2, left: this.fs * 3.6 };
   }
 
   private font(scale = 1, weight = 400): string {
@@ -141,6 +170,55 @@ export class LiveChart {
     let max = live.currentPowerAvg();
     for (const p of live.power) if (p.t >= t0 && p.value > max) max = p.value;
     if (max > this.yMax * 0.95) this.yMax = Math.ceil((max * 1.15) / 50) * 50;
+    const hr = live.hrSeries.at(-1)?.value ?? 0;
+    if (hr > this.hrMax - 5) this.hrMax = Math.ceil((hr + 10) / 20) * 20;
+  }
+
+  private yHr(bpm: number): number {
+    const h = this.height - this.pad.top - this.pad.bottom;
+    const f = (Math.min(Math.max(bpm, HR_MIN), this.hrMax) - HR_MIN) / (this.hrMax - HR_MIN);
+    return this.pad.top + h - f * h;
+  }
+
+  /** Heart rate line on its own scale, with the bpm axis and the current value on the right. */
+  private drawHeartRate(live: LiveSession, t0: number, now: number): void {
+    const { ctx, theme } = this;
+    ctx.font = this.font(0.85);
+    ctx.fillStyle = theme.hr;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    for (let b = HR_MIN; b <= this.hrMax; b += 20) ctx.fillText(String(b), this.width - this.pad.right + 6, this.yHr(b));
+
+    const series = live.hrSeries.filter((p) => p.t >= t0 - 1);
+    const current = live.heartRate();
+    if (series.length === 0 && current === null) return;
+    ctx.strokeStyle = theme.hr;
+    ctx.lineWidth = 2.5 * this.k;
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    series.forEach((p, i) => (i === 0 ? ctx.moveTo(this.x(Math.max(p.t, t0), t0), this.yHr(p.value)) : ctx.lineTo(this.x(p.t, t0), this.yHr(p.value))));
+    if (current !== null && series.length > 0) ctx.lineTo(this.x(now, t0), this.yHr(current));
+    ctx.stroke();
+    if (current === null) return;
+
+    const x = this.x(now, t0);
+    const y = this.yHr(current);
+    ctx.beginPath();
+    ctx.arc(x, y, 5 * this.k, 0, Math.PI * 2);
+    ctx.fill();
+    // The value at the right edge, by its own axis, clear of the power line's history.
+    const text = `♥ ${current}`;
+    ctx.font = this.font(1, 700);
+    ctx.textAlign = 'right';
+    const w = ctx.measureText(text).width;
+    const xr = this.width - this.pad.right - 6;
+    ctx.fillStyle = theme.bg;
+    ctx.globalAlpha = 0.8;
+    ctx.fillRect(xr - w - 4, y - this.fs * 0.7, w + 8, this.fs * 1.4);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = theme.hr;
+    ctx.fillText(text, xr, y);
   }
 
   private drawGrid(): void {
@@ -210,7 +288,7 @@ export class LiveChart {
     };
     line('hi', theme.bandEdge, 1);
     line('lo', theme.bandEdge, 1);
-    line('t', theme.target, 2);
+    line('t', theme.target, 2 * this.k);
   }
 
   /** Vertical lines at upcoming segment starts, labelled e.g. "Vila 2:00 · 72 W". */
@@ -253,8 +331,8 @@ export class LiveChart {
     if (current === null) return;
     const { ctx, theme } = this;
     ctx.strokeStyle = theme.mpa;
-    ctx.lineWidth = 3;
-    ctx.setLineDash([10, 7]);
+    ctx.lineWidth = 3 * this.k;
+    ctx.setLineDash([10 * this.k, 7 * this.k]);
     ctx.beginPath();
     let started = false;
     for (const p of series) {
@@ -300,7 +378,7 @@ export class LiveChart {
       if (!band) return theme.neutral;
       return p.value < band.lo ? theme.below : p.value > band.hi ? theme.above : theme.inBand;
     };
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 4 * this.k;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.setLineDash([]);
@@ -319,20 +397,20 @@ export class LiveChart {
     const c = colour({ t: now, value: current });
     ctx.fillStyle = c;
     ctx.beginPath();
-    ctx.arc(x, y, 8, 0, Math.PI * 2);
+    ctx.arc(x, y, 8 * this.k, 0, Math.PI * 2);
     ctx.fill();
     ctx.font = this.font(1.5, 800);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${Math.round(current)} W`, x + 14, Math.min(Math.max(y, this.pad.top + this.fs), this.height - this.pad.bottom - this.fs));
+    ctx.fillText(`${Math.round(current)} W`, x + 8 * this.k + 6, Math.min(Math.max(y, this.pad.top + this.fs), this.height - this.pad.bottom - this.fs));
   }
 
   private refLine(p: number, colour: string, label: string, dash: number[]): void {
     const { ctx } = this;
     const y = Math.round(this.y(p)) + 0.5;
     ctx.strokeStyle = colour;
-    ctx.lineWidth = 2;
-    ctx.setLineDash(dash);
+    ctx.lineWidth = 2 * this.k;
+    ctx.setLineDash(dash.map((d) => d * this.k));
     ctx.beginPath();
     ctx.moveTo(this.pad.left, y);
     ctx.lineTo(this.width - this.pad.right, y);

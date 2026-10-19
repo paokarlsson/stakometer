@@ -111,6 +111,7 @@ export const settingsView: View = (root, app) => {
     ...(Object.keys(CALIBRATION_LABEL) as CalibrationMode[]).map((m) => h('option', { value: m, selected: m === s.calibration }, CALIBRATION_LABEL[m])),
   );
   const minWbal = numberInput(s.minWbal * 100, '1');
+  const chartHeartRate = h('input', { type: 'checkbox', checked: s.chartHeartRate });
   const green = numberInput(s.zones.green * 100, '1');
   const yellow = numberInput(s.zones.yellow * 100, '1');
   const orange = numberInput(s.zones.orange * 100, '1');
@@ -132,6 +133,7 @@ export const settingsView: View = (root, app) => {
       machine: machineSelect.value as Settings['machine'],
       calibration: calibrationSelect.value as CalibrationMode,
       minWbal: Number(minWbal.value) / 100,
+      chartHeartRate: chartHeartRate.checked,
       zones: { green: Number(green.value) / 100, yellow: Number(yellow.value) / 100, orange: Number(orange.value) / 100 },
       wbalModel: modelSelect.value as WbalModel,
       skiba: { a: Number(skibaA.value), b: Number(skibaB.value), c: Number(skibaC.value) },
@@ -194,6 +196,7 @@ export const settingsView: View = (root, app) => {
         field('Drag i effektmedlet', avgStrokes),
         field('Maskintyp (PM5)', machineSelect),
       ),
+      h('label', { class: 'check' }, chartHeartRate, 'Visa puls i livegrafen (när pulsmätare är ansluten)'),
       h('p', { class: 'hint small' }, 'Passens intensitet räknas mot din signatur så att den beräknade W′-balansen inte går under lägsta W′. Bara arbete över CP justeras; vilor och testpass rörs inte.'),
       h('div', { class: 'fields' }, field('Anpassa passen', calibrationSelect), field('Lägsta W′', minWbal, '%')),
       h(

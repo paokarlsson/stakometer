@@ -23,6 +23,8 @@ export interface Settings {
   calibration: CalibrationMode;
   /** Planned lowest W′ as a fraction of W′ that workouts must not go below. */
   minWbal: number;
+  /** Heart rate as a line in the live chart, when the device delivers it. */
+  chartHeartRate: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   machine: 'auto',
   calibration: 'fit',
   minWbal: 0.3,
+  chartHeartRate: true,
 };
 
 const MACHINES: readonly Settings['machine'][] = ['auto', 'skierg', 'rowerg', 'bikeerg', 'trainer'];
@@ -52,6 +55,7 @@ export function validateSettings(s: Settings): string | null {
   if (!MACHINES.includes(s.machine)) return 'Okänd maskintyp.';
   if (!['off', 'lower', 'fit'].includes(s.calibration)) return 'Okänt läge för anpassning av passen.';
   if (!isNum(s.minWbal) || s.minWbal < 0 || s.minWbal > 0.9) return 'Lägsta W′ måste vara mellan 0 och 90 %.';
+  if (typeof s.chartHeartRate !== 'boolean') return 'Ogiltigt val för puls i grafen.';
   return null;
 }
 

@@ -2,7 +2,7 @@
 // average and the last test of the same length as reference lines.
 import type { LiveSession } from '../../session/live';
 import type { TimelineSegment } from '../../workout/schema';
-import { FONT, readTheme, type Theme } from './canvas';
+import { FONT, readTheme, uiScale, type Theme } from './canvas';
 
 /** Tick spacing in seconds giving at most six intervals; whole minutes for efforts over 2 min. */
 export function tickStep(duration: number): number {
@@ -96,7 +96,7 @@ export class MaxChart {
     this.canvas.width = Math.round(this.width * dpr);
     this.canvas.height = Math.round(this.height * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.fs = Math.round(Math.min(22, Math.max(13, this.height / 24)));
+    this.fs = Math.round(Math.min(22 * uiScale(), Math.max(13, this.height / 24)));
     this.pad = { top: this.fs, right: this.fs * 1.4, bottom: this.fs * 2, left: this.fs * 3.4 };
   }
 
