@@ -348,10 +348,10 @@ Träningspassen har ingen uppvärmning eller nedvarvning (användarens beslut 20
 1. **4×4 min tröskel:** 4 × 4 min på 105 % CP med 2 min vila på 40 % CP (exemplet i §6.1 utan uppvärmning och nedvarvning).
 2. **8×1 min hårt:** 8 × (1 min på 130 % CP / 1 min på 40 % CP).
 3. **30 min jämnt:** 30 min på 75 % CP.
-4. **2×15 min:** 2 × 15 min på 95 % CP med 3 min vila på 40 % CP.
+4. **2×15 min:** 2 × 15 min på 95 % CP med 3 min vila på 40 % CP. Varje intervall har 5 impulser à 10 s på 150 % CP, en mitt i varje 3-minutersdel (85 s tröskel, 10 s impuls, 85 s tröskel), med bandet ±10 %.
 5. **6×5 min:** 6 × 5 min på 100 % CP med 1 min vila på 40 % CP.
 6. **10×3 min:** 10 × 3 min på 105 % CP med 1 min vila på 40 % CP.
-7. **3×10 min 40/20:** tre block med 10 × (40 s på 120 % CP / 20 s på 40 % CP) och 3 min vila på 40 % CP mellan blocken. Passet skrevs innan formatet fick block (§6.1), så blocken står var för sig och heter "Block 1 · 3/10" osv. Intensiteter och vilor i pass 4–7 är [FÖRSLAG].
+7. **3×10 min 40/20:** tre block med 10 × (40 s på 120 % CP / 20 s på 40 % CP) och 3 min vila på 40 % CP mellan blocken. Passet skrevs innan formatet fick block (§6.1), så blocken står var för sig och heter "Block 1 · 3/10" osv. Intensiteter, impulser och vilor i pass 4–7 är [FÖRSLAG].
 8. **Fri åkning:** Ett eget läge utan tidslinje. Livevyn visar effekt, MPA och W′-batteri men inget målband. Passet pågår tills användaren stoppar.
 
 Testpassen beskrivs i §7.
