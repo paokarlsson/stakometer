@@ -77,6 +77,20 @@ describe('LiveSession', () => {
     expect(live.distance()).toBeCloseTo(42.5, 6);
   });
 
+  it('keeps heart rate once per second for the chart, and drops a stale value', async () => {
+    const { live, source, ride } = await setup();
+    ride(0, 3, 150);
+    expect(live.hrSeries).toHaveLength(0);
+    expect(live.heartRate()).toBeNull();
+    source.status.emit({ ts: COUNTDOWN_S + 3, pmElapsed: 3, heartRate: 142 });
+    ride(3, 6, 150);
+    expect(live.heartRate()).toBe(142);
+    expect(live.hrSeries).toEqual([3, 4, 5].map((t) => ({ t, value: 142 })));
+    ride(6, 12, 150); // no status for more than STALE_AFTER_S
+    expect(live.heartRate()).toBeNull();
+    expect(live.hrSeries.at(-1)!.t).toBeLessThan(12);
+  });
+
   it('keeps the drag factor from the latest stroke that had one', async () => {
     const { live, source, ride } = await setup();
     ride(0, 2, 150);

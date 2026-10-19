@@ -44,6 +44,8 @@ export class LiveSession {
   readonly power: LivePoint[] = [];
   /** MPA once per second. */
   readonly mpaSeries: LivePoint[] = [];
+  /** Heart rate once per second (value in bpm), while the device delivers it. */
+  readonly hrSeries: LivePoint[] = [];
   /** W′ balance in J, null without a signature. */
   wbal: number | null;
   minWbal: { value: number; t: number } | null = null;
@@ -125,8 +127,10 @@ export class LiveSession {
     const t = this.runner.sessionTime();
     const sig = this.signature;
     const start = this.resampler.seconds;
+    const hr = this.heartRate();
     this.resampler.advanceTo(t).forEach((p, i) => {
       const n = start + i + 1;
+      if (hr !== null) this.hrSeries.push({ t: n, value: hr });
       this.workJ += p;
       this.workSeconds += 1;
       // Running average of the maximal effort, from the 1 Hz series like the test result (§7.2, §7.3).
@@ -208,8 +212,10 @@ export class LiveSession {
     return this.fresh('torque');
   }
 
+  /** bpm, null when the device gives none or the latest status is older than STALE_AFTER_S. */
   heartRate(): number | null {
-    return this.lastStatus?.heartRate ?? null;
+    const s = this.lastStatus;
+    return s?.heartRate !== undefined && this.clock.now() - s.ts <= STALE_AFTER_S ? s.heartRate : null;
   }
 
   /** wbal / W′ (may be negative), null without a signature. */

@@ -81,7 +81,7 @@ export const liveView: View = (root, app) => {
   const description = h('p', { class: 'live-desc', hidden: true });
 
   // --- Chart ---
-  const canvas = h('canvas', { class: 'chart', role: 'img', 'aria-label': 'Effekt, målband och MPA över tid' });
+  const canvas = h('canvas', { class: 'chart', role: 'img', 'aria-label': settings.chartHeartRate ? 'Effekt, målband, MPA och puls över tid' : 'Effekt, målband och MPA över tid' });
   const legend = h('div', { class: 'legend' }, h('span', { class: 'axis' }, 'Effekt (W)'), legendKey('power', `Effekt (${settings.powerAvgStrokes} ${labels.avgUnit})`));
   const banner = h('p', { class: 'banner', hidden: true }, `Återansluter till ${device} – passet fortsätter`);
   // Automatic reconnecting gave up: the session keeps running without data until reconnected.
@@ -90,6 +90,9 @@ export const liveView: View = (root, app) => {
   const lostBanner = h('p', { class: 'banner', hidden: true }, `${device} frånkopplad – ingen data kommer in`, reconnectBtn);
   // Before the maximal effort: a drag factor unlike the last test of the same length (spec §7.3).
   const dragBanner = h('p', { class: 'banner', hidden: true });
+  // Heart rate gets its key (and the chart its right axis) once the device delivers it.
+  const hrKey = legendKey('hr', 'Puls (slag/min, höger axel)');
+  hrKey.hidden = true;
   const fps = h('div', { class: 'fps', hidden: !app.debugLogging });
   let fpsFrames = 0;
   let fpsSince = performance.now();
@@ -259,6 +262,7 @@ export const liveView: View = (root, app) => {
     maxScreen.hidden = !inMax;
     if (inMax) renderMax(l, cur.segment, cur.remaining);
     else chart.draw(l);
+    if (hrKey.hidden && settings.chartHeartRate && l.hrSeries.length > 0) hrKey.hidden = false;
     strip?.update(runner.state === 'countdown' ? null : runner.timelineTime());
 
     fpsFrames++;
@@ -452,6 +456,7 @@ export const liveView: View = (root, app) => {
     if (timeline && signature && !isTest) timeline = calibrate(timeline, signature, calibrationOptions(settings, planned?.calibration)).timeline;
     if (timeline) legend.append(legendKey('band', 'Målband'));
     if (signature) legend.append(legendKey('mpa', 'MPA'), legendKey('cp', 'CP'));
+    legend.append(hrKey);
     if (workout && timeline) {
       strip = workoutStrip(workout, timeline);
       description.before(strip.el);
@@ -469,7 +474,7 @@ export const liveView: View = (root, app) => {
     const session = live;
     app.target = () => session.runner.target();
     app.maxEffort = () => session.maxEffortDuration();
-    chart = new LiveChart(canvas, yMaxFor(timeline ? highestTarget(timeline) : null, signature?.cp ?? null));
+    chart = new LiveChart(canvas, yMaxFor(timeline ? highestTarget(timeline) : null, signature?.cp ?? null), settings.chartHeartRate);
     await live.start();
     void lockScreen();
     frame = requestAnimationFrame(render);
